@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-blue-core"
+version = "2.2.0"
+description = "Project Blue Phase 1 local trusted core"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+blue = "project_blue.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+project_blue = ["data/*.json"]

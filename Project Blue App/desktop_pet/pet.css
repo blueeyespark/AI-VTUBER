@@ -1,0 +1,23 @@
+:root { color-scheme: dark; font-family: "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+#dragbar { position: absolute; z-index: 5; top: 8px; left: 12px; right: 12px; height: 34px;
+  -webkit-app-region: drag; color: #eaf7ff; font-weight: 800; letter-spacing: .2em;
+  background: #102238cc; border: 1px solid #54b4ff88; border-radius: 12px; padding: 7px 10px; }
+#dragbar button { -webkit-app-region: no-drag; float: right; border: 0; background: transparent;
+  color: white; font-size: 18px; line-height: 18px; cursor: pointer; }
+#body { width: 56%; height: 100%; display: block; }
+#mood { position: absolute; left: 18px; top: 50px; color: #dff4ff; background: #102238bb;
+  border-radius: 12px; padding: 7px 10px; pointer-events: none; }
+#talkButton { position: absolute; z-index: 4; left: 18px; bottom: 18px; border: 1px solid #82ceff;
+  border-radius: 18px; padding: 10px 16px; background: #1672b8dd; color: white; font-weight: 700; }
+#chat { position: absolute; z-index: 6; right: 14px; top: 52px; bottom: 14px; width: 40%;
+  padding: 12px; border-radius: 16px; background: #081625ee; border: 1px solid #54b4ff88; }
+#messages { height: calc(100% - 96px); overflow-y: auto; color: #dceeff; white-space: pre-wrap; }
+.row { display: flex; gap: 6px; }
+input { min-width: 0; flex: 1; border: 1px solid #315676; border-radius: 10px; padding: 10px;
+  background: #102238; color: white; }
+.row button { border: 0; border-radius: 10px; padding: 9px 12px; background: #1672b8; color: white; }
+.share { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 7px; }
+.share button { border: 1px solid #315676; border-radius: 9px; padding: 7px 4px;
+  background: #102238; color: #dff4ff; cursor: pointer; }

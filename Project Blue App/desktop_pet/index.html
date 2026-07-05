@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Project Blue Control Center</title>
+  <link rel="stylesheet" href="control.css">
+</head>
+<body>
+  <header>
+    <img src="../src/project_blue/data/blue_avatar.png" alt="Blue">
+    <div class="brand"><h1>Project Blue</h1><p>Local AI workbench</p></div>
+    <div class="command-shell">
+      <span aria-hidden="true">⌕</span>
+      <input id="commandSearch" list="blueCommands" autocomplete="off"
+        placeholder="Search controls or type a command… (Ctrl+K)"
+        aria-label="Search Blue controls">
+      <datalist id="blueCommands">
+        <option value="New conversation"></option>
+        <option value="Chat"></option>
+        <option value="Presence and privacy"></option>
+        <option value="Create and idea lab"></option>
+        <option value="Expansion foundations"></option>
+        <option value="Movement and expressions"></option>
+        <option value="Discord"></option>
+        <option value="Security status"></option>
+        <option value="System health"></option>
+        <option value="Share files"></option>
+        <option value="Scan image text"></option>
+      </datalist>
+    </div>
+    <button id="hide">Minimize to tray</button>
+  </header>
+  <div class="status-row global-status" aria-live="polite">
+    <span id="presenceState" class="status-chip good">Presence: idle</span>
+    <span id="visionState" class="status-chip safe">Vision: Off</span>
+    <span id="microphoneState" class="status-chip safe">Microphone: Off</span>
+    <span id="captureState" class="status-chip safe">Auto capture: Off</span>
+  </div>
+  <nav class="tab-bar" aria-label="Blue control panel sections">
+    <div class="nav-heading">Workspace</div>
+    <button data-tab="chat" data-icon="◆" aria-selected="true">Chat</button>
+    <button data-tab="presence" data-icon="◉">Presence</button>
+    <button data-tab="create" data-icon="✦">Create</button>
+    <button data-tab="expansion" data-icon="▦">Expansion</button>
+    <button data-tab="motion" data-icon="➜">Motion</button>
+    <button data-tab="discord" data-icon="◌">Discord</button>
+    <button data-tab="security" data-icon="⌾">Security</button>
+    <button data-tab="system" data-icon="⚙">System</button>
+    <div class="nav-note">Ctrl+1…8 switches views<br>Ctrl+K searches controls</div>
+  </nav>
+  <main>
+    <section class="presence-panel" data-panel="presence" hidden>
+      <h2>Presence and Privacy</h2>
+      <label class="field-label">How proactive should Blue be?
+        <select id="proactivity">
+          <option value="off">Off - only respond when asked</option>
+          <option value="quiet">Quiet - occasional movement</option>
+          <option value="balanced">Balanced - normal companion behavior</option>
+          <option value="social">Social - frequent movement and gestures</option>
+        </select>
+      </label>
+      <div class="grid">
+        <button id="observationHistory">Observation History</button>
+        <button id="activityHistory">Activity Timeline</button>
+        <button id="health">Component Health</button>
+        <button id="clearObservations" class="secondary">Clear History Metadata</button>
+        <button id="clearActivity" class="secondary">Clear Activity Timeline</button>
+      </div>
+      <label class="field-label">Delete one observation record
+        <select id="observationSelect">
+          <option value="">Load Observation History first</option>
+        </select>
+      </label>
+      <button id="deleteObservation" class="secondary">Delete Selected Observation</button>
+      <p class="hint">Blue does not watch your screen automatically. Observation History only records metadata for images you deliberately share. Vision and microphone capture remain unavailable until permission-gated providers are built.</p>
+      <pre id="presenceDetails">Loading local presence status...</pre>
+    </section>
+    <section class="chat" data-panel="chat">
+      <h2>Talk to Blue</h2>
+      <div class="conversation-bar">
+        <select id="conversationSelect" aria-label="Current conversation"></select>
+        <input id="newConversationName" maxlength="120" placeholder="New conversation name">
+        <button id="newConversation">New</button>
+      </div>
+      <div id="messages"><p><b>blue&gt;</b> I am here. What shall we work on?</p></div>
+      <div class="row">
+        <input id="prompt" autocomplete="off" placeholder="Talk to Blue...">
+        <button id="listen" title="Listen locally for up to eight seconds">Listen Once</button>
+        <button id="send">Send</button>
+      </div>
+      <p class="hint">Listen Once uses the local Windows speech recognizer. It stops automatically and places text here for you to review before sending.</p>
+    </section>
+    <section data-panel="chat">
+      <h2>Paste or Drop Anything</h2>
+      <textarea id="pasteBox" placeholder="Paste text, notes, or a link here - like a normal chat box."></textarea>
+      <div id="dropZone">Drop files, images, or folders here</div>
+      <button id="pasteSend">Send Pasted Content</button>
+    </section>
+    <section data-panel="chat">
+      <h2>Browse and Share</h2>
+      <div class="grid">
+        <button id="files">Files</button><button id="images">Images</button>
+        <button id="folder">Folder</button><button id="clipboard">Paste Clipboard</button>
+        <button id="scanImage">Scan Image Text Locally</button>
+      </div>
+      <textarea id="ocrResult" readonly placeholder="Local OCR results will appear here."></textarea>
+      <button id="useOcr" class="secondary" disabled>Use OCR Text in Paste Box</button>
+      <p class="hint">Folders are indexed read-only. Non-text files are copied into Blue's private inbox.</p>
+      <p class="hint">Image scanning uses Windows.Media.Ocr on this PC. It does not watch the screen or upload the image, and extracted text is never sent automatically.</p>
+    </section>
+    <section data-panel="chat">
+      <h2>Blue's Voice</h2>
+      <div class="grid">
+        <button id="voiceToggle">Voice: On</button><button id="voiceTest">Test Voice</button>
+      </div>
+      <select id="voiceSelect" aria-label="Choose an installed voice"></select>
+      <p class="hint">Uses a free voice already installed on this PC. No purchase or cloud account is required.</p>
+    </section>
+    <section data-panel="chat">
+      <h2>Local AI Brain</h2>
+      <div class="grid">
+        <button id="providerStatus">Check AI Model</button>
+        <button id="connectModel">Connect Installed Model</button>
+        <button id="loadHistory">Show Conversation History</button>
+      </div>
+      <p class="hint">Blue never downloads or purchases a model silently. If Ollama and a model are already installed locally, Connect Installed Model selects it for contextual conversation.</p>
+    </section>
+    <section data-panel="create" hidden>
+      <h2>Blue Laboratory and Genome</h2>
+      <input id="labTitle" maxlength="200" placeholder="Name this idea or question">
+      <select id="labKind" aria-label="Laboratory record type">
+        <option value="idea">Idea</option>
+        <option value="hypothesis">Hypothesis</option>
+        <option value="experiment">Experiment</option>
+        <option value="finding">Finding</option>
+      </select>
+      <label class="field-label">Confidence (0 = untested, 1 = strongly verified)
+        <input id="labConfidence" type="number" min="0" max="1" step="0.05" value="0">
+      </label>
+      <textarea id="labContent" maxlength="20000" placeholder="Describe the idea, what it should accomplish, assumptions, or evidence needed."></textarea>
+      <div class="grid">
+        <button id="captureIdea">Save to Idea Lab</button>
+        <button id="capabilities">Capability Map</button>
+        <button id="researchCatalog">Research Sources</button>
+      </div>
+      <p class="hint">Ideas are not presented as facts. Hypotheses need testing; findings need evidence and confidence. Every record is local, searchable, and audited.</p>
+    </section>
+    <section data-panel="expansion" hidden>
+      <h2>Safe Expansion Foundations</h2>
+      <p class="hint">Build structured local foundations for the screenshot roadmap. These records cannot transfer money, publish content, control another PC, diagnose illness, move hardware, or execute automation.</p>
+      <div class="grid">
+        <label class="field-label">Domain
+          <select id="expansionDomain">
+            <option value="automation">PC action proposals</option>
+            <option value="network">Trusted host network</option>
+            <option value="mobile">Mobile companion</option>
+            <option value="community">Community and social</option>
+            <option value="enterprise">Enterprise</option>
+            <option value="finance">Finance records</option>
+            <option value="medical">Medical education</option>
+            <option value="robotics">Robotics simulation</option>
+            <option value="explorer">Peaceful exploration</option>
+            <option value="continuity">Seed, Ark, and migration</option>
+            <option value="world_model">World model</option>
+            <option value="research">Internet research queue</option>
+          </select>
+        </label>
+        <label class="field-label">Record type
+          <select id="expansionKind"></select>
+        </label>
+      </div>
+      <input id="expansionTitle" maxlength="200" placeholder="Record title">
+      <textarea id="expansionContent" maxlength="20000" placeholder="Describe the plan, local record, simulation, draft, claim, or question."></textarea>
+      <input id="expansionSource" maxlength="2000" placeholder="Source or provenance (optional)">
+      <div class="grid">
+        <button id="expansionSave">Save Safe Foundation Record</button>
+        <button id="expansionRefresh" class="secondary">Refresh Domain Status</button>
+      </div>
+      <pre id="expansionDetails">Loading expansion foundations…</pre>
+    </section>
+    <section data-panel="motion" hidden>
+      <h2>Movement and Expressions</h2>
+      <div class="action-grid">
+        <button data-action="walk">Walk Now</button>
+        <button data-action="run">Run Now</button>
+        <button data-action="wave">Wave</button>
+        <button data-action="smile">Smile</button>
+        <button data-action="look">Look Around</button>
+        <button data-action="nod">Nod</button>
+        <button data-action="cheer">Cheer</button>
+        <button data-action="lean">Lean</button>
+        <button data-action="stretch">Stretch</button>
+        <button data-action="dance">Dance</button>
+      </div>
+      <p class="hint">Blue travels between places on your desktop, alternates walking and running, and blends expressions and gestures without snapping the rig.</p>
+    </section>
+    <section data-panel="motion" hidden>
+      <h2>Desktop and OBS</h2>
+      <div class="grid">
+        <button id="showPet">Show Pet</button><button id="wander">Pause Wandering</button>
+      </div>
+      <p class="hint">In OBS, add a Window Capture source named "Blue 3D Pet - OBS Capture".</p>
+    </section>
+    <section data-panel="discord" hidden>
+      <h2>Discord Add-on</h2>
+      <p class="hint">Creates guild-only <code>/blue status</code> and <code>/blue ask</code> commands. Blue accepts only the configured guild/channel and optional user allowlist. The bot token stays in memory and is never saved.</p>
+      <label class="field-label">Application ID
+        <input id="discordApplicationId" inputmode="numeric" placeholder="Discord application ID">
+      </label>
+      <label class="field-label">Guild (server) ID
+        <input id="discordGuildId" inputmode="numeric" placeholder="Allowed guild ID">
+      </label>
+      <label class="field-label">Channel ID
+        <input id="discordChannelId" inputmode="numeric" placeholder="Allowed channel ID">
+      </label>
+      <label class="field-label">Allowed user IDs (comma-separated; blank allows channel members)
+        <input id="discordAllowedUsers" placeholder="123..., 456...">
+      </label>
+      <label class="field-label">Bot token for this session only
+        <input id="discordToken" type="password" autocomplete="off" placeholder="Never written to disk">
+      </label>
+      <div class="action-grid">
+        <button id="discordSave">Save Nonsecret IDs</button>
+        <button id="discordTest">Test Token</button>
+        <button id="discordRegister">Register Commands</button>
+        <button id="discordConnect">Connect</button>
+        <button id="discordDisconnect" class="secondary">Disconnect</button>
+      </div>
+      <pre id="discordStatus">Discord add-on is disconnected.</pre>
+      <p class="hint">Create the bot in Discord's Developer Portal and invite it to your server. Do not paste the token into chat, files, screenshots, or source code.</p>
+    </section>
+    <section data-panel="security" hidden>
+      <h2>Windows Security Center</h2>
+      <p class="hint">Blue manually reads Microsoft Defender, Windows Firewall, registered antivirus products, recent threat detections, and startup-entry names. It does not run a scan, quarantine files, modify startup, or change security settings.</p>
+      <div class="security-summary">
+        <span id="securityState" class="status-chip">Not scanned</span>
+        <span id="securityDefender" class="status-chip">Defender: unknown</span>
+        <span id="securityFirewall" class="status-chip">Firewall: unknown</span>
+        <span id="securityThreats" class="status-chip">Threat records: unknown</span>
+      </div>
+      <button id="securityScan">Read Security Status</button>
+      <pre id="securityDetails">Choose Read Security Status for a manual, read-only snapshot.</pre>
+      <p class="hint">Blue is not an antivirus engine and cannot guarantee that a computer is malware-free. Use Windows Security or your installed security provider for scanning and remediation.</p>
+    </section>
+    <section data-panel="system" hidden>
+      <h2>Safe PC Help</h2>
+      <div class="grid">
+        <button id="doctor">Run Blue Doctor</button><button id="systemInfo">PC and Display Info</button>
+        <button id="openProject">Open Blue Folder</button>
+        <button id="pendingApprovals">Pending Approvals</button>
+        <button id="auditEvents">Recent Audit Events</button>
+      </div>
+      <pre id="status">Blue only performs bounded, visible actions. Project changes remain approval-gated.</pre>
+    </section>
+  </main>
+  <footer class="workbench-status" aria-live="polite">
+    <span id="footerConversation">Conversation: Blue Desktop Pet</span>
+    <span>Local mode</span>
+    <span id="footerDiscord">Discord: disconnected</span>
+    <span id="footerSecurity">Security: not scanned</span>
+    <span>Vision off</span>
+  </footer>
+  <script src="control.js"></script>
+</body>
+</html>

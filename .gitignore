@@ -1,0 +1,43 @@
+# Project Blue private runtime state and secrets
+**/.blue/
+**/desktop_state/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+
+# Dependencies, caches, and generated outputs
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.coverage
+**/build/
+**/dist/
+**/*.egg-info/
+**/exports/
+**/.cache/
+*.log
+
+# Local verified backups stay on the owner PC
+Project Blue App/backups/
+Project Blue App/release_backups/
+
+# Canonical source is Project Blue App; this workspace contains duplicate
+# staging builds, smoke captures, downloaded tooling, and temporary analysis.
+Project Blue Development Workspace/
+
+# Downloaded research footage is not redistributed.
+Project Blue App/assets/movement_references/*.mp4
+
+# Editor and operating-system state
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

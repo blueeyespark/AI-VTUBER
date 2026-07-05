@@ -1,0 +1,170 @@
+﻿{
+    "schema":  "project-blue-screenshot-ocr-manifest-v1",
+    "generated_at":  "2026-07-05T02:32:10.7252509+00:00",
+    "screenshot_count":  18,
+    "provider":  "Windows.Media.Ocr",
+    "entries":  [
+                    {
+                        "suffix":  "091529",
+                        "source":  "Screenshot_20260701_091529_Chrome.jpg",
+                        "source_sha256":  "E777978562958070A9447BAA51331C7620A047F4623E49E53EBA393BA1EE0303",
+                        "transcript":  "091529.md",
+                        "transcript_sha256":  "B70C750FEE75068155FE73A8747F4402E571F3D69756E05B34DF80B4C7F42F92",
+                        "characters":  11880,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "091655",
+                        "source":  "Screenshot_20260701_091655_Chrome.jpg",
+                        "source_sha256":  "5DD90FEBFF9EF5C398625125EC750A38460207976178BB76D0A0BBC4D676E683",
+                        "transcript":  "091655.md",
+                        "transcript_sha256":  "DB1F47268CEEBFD68FC887D2C0D2EB33461D9BBED9D4EAA0D884C08C1CC38BD1",
+                        "characters":  12480,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "091814",
+                        "source":  "Screenshot_20260701_091814_Chrome.jpg",
+                        "source_sha256":  "08724E30A026D100746027B1ECDB6A9A4658CFCE2881BA79E42E17CF53C574AA",
+                        "transcript":  "091814.md",
+                        "transcript_sha256":  "704CEF63946A3E5CE58328838C9B9C5B1BC08FBA2012F0DAE3CAE3E40436020F",
+                        "characters":  11539,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "091926",
+                        "source":  "Screenshot_20260701_091926_Chrome.jpg",
+                        "source_sha256":  "594490DE367643CB746490899D9857CC84C365CE458093608AB408C6E3CF2737",
+                        "transcript":  "091926.md",
+                        "transcript_sha256":  "BB891C55EB1B7653BB9BD620F3497361BAFC3849A72ADFF1F3ED3352D77DEF87",
+                        "characters":  5487,
+                        "tiles":  3
+                    },
+                    {
+                        "suffix":  "092100",
+                        "source":  "Screenshot_20260701_092100_Chrome.jpg",
+                        "source_sha256":  "BE047F93BFB805901B2C278B426A5D27454267A6EE6DE816813531876B6972F7",
+                        "transcript":  "092100.md",
+                        "transcript_sha256":  "132487D2DC3C74C6BE0CE57C56648F51831830C8AF0BD6055EBF6769EB8F62EB",
+                        "characters":  12599,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "092200",
+                        "source":  "Screenshot_20260701_092200_Chrome.jpg",
+                        "source_sha256":  "21E823715650899C5C940D874D2B1C1EA67FF850F2834AE9F724A5403F205275",
+                        "transcript":  "092200.md",
+                        "transcript_sha256":  "F4DC5FC8BF9011C3564D84A263E341D17AFDE3AAFD32161D28F95665D3AFB29E",
+                        "characters":  10990,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "092300",
+                        "source":  "Screenshot_20260701_092300_Chrome.jpg",
+                        "source_sha256":  "4B3E72637B9574AE91BD356483C3AFA57C01E3BFC8A7A9A42015A48E0C864736",
+                        "transcript":  "092300.md",
+                        "transcript_sha256":  "1126D61F3BD0DAF88CAB2175E0DB98E1002A6F663A2268B9EB7564BB17CA39AF",
+                        "characters":  7615,
+                        "tiles":  5
+                    },
+                    {
+                        "suffix":  "092346",
+                        "source":  "Screenshot_20260701_092346_Chrome.jpg",
+                        "source_sha256":  "1CC34E743BC5763E0A9870A19F093CC61651CB73F38DB5938EFFA1C6B56BD7C4",
+                        "transcript":  "092346.md",
+                        "transcript_sha256":  "C289F57DD5EA14AC90F43F4435C12B9844E38978A4D1C0DBF11BA047C62828DF",
+                        "characters":  1275,
+                        "tiles":  2
+                    },
+                    {
+                        "suffix":  "092357",
+                        "source":  "Screenshot_20260701_092357_Chrome.jpg",
+                        "source_sha256":  "FBBBA4474D0993A37DBE61B9C68CFB35AB64057EFDB31C35E22019AF5F27E7C4",
+                        "transcript":  "092357.md",
+                        "transcript_sha256":  "A39815782C0FF1BB28D93F52CD79B5452E3501E36AC47DB672F109B4CE51BFF6",
+                        "characters":  10980,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "092456",
+                        "source":  "Screenshot_20260701_092456_Chrome.jpg",
+                        "source_sha256":  "7A7A59CC447818AC5A69EE0034DADEB78877A6D7D15D9AA5589E03063E7E96AD",
+                        "transcript":  "092456.md",
+                        "transcript_sha256":  "00D9E91B6C2B7DAD5321DFF96363B4F07349AF0285AAF6A7983ADEC9E37519A4",
+                        "characters":  6522,
+                        "tiles":  4
+                    },
+                    {
+                        "suffix":  "092528",
+                        "source":  "Screenshot_20260701_092528_Chrome.jpg",
+                        "source_sha256":  "26242F2E23B0B8C05C562667EF42A114D587A341629D0532B1645DA437106CD1",
+                        "transcript":  "092528.md",
+                        "transcript_sha256":  "8CB4880BF4A46776FE5BF5FF3714C22D269F7FC7D48E43174892FD6B40ABE9C2",
+                        "characters":  11058,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "092628",
+                        "source":  "Screenshot_20260701_092628_Chrome.jpg",
+                        "source_sha256":  "7C4EEC993BB6169C1F7B88EA6335F6BDA20D4BFC8949FC4E1292A3BAEBEE90AC",
+                        "transcript":  "092628.md",
+                        "transcript_sha256":  "92BE6478FA5D9BF58ECCE3984C583580D5452732DC570A5B4A0D5A4F371673E9",
+                        "characters":  9395,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "092906",
+                        "source":  "Screenshot_20260701_092906_Chrome.jpg",
+                        "source_sha256":  "EC158DAD41469514A2E07155C9D11826A05CF704A6AE051644A72D35996C8689",
+                        "transcript":  "092906.md",
+                        "transcript_sha256":  "3D3995A05EB267614F1B3378777E8FB8411000EC33FAD9F97CC954F285FF0249",
+                        "characters":  7622,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "093010",
+                        "source":  "Screenshot_20260701_093010_Chrome.jpg",
+                        "source_sha256":  "31E569348C6625848BF73EBED40D7C2D549650CB063B53DC9D91DA3F483555C8",
+                        "transcript":  "093010.md",
+                        "transcript_sha256":  "A33D842F92C6D996422BA16C673A9D3B3BB13E0DB3B2855AF8D52E9D8E890BD7",
+                        "characters":  3072,
+                        "tiles":  3
+                    },
+                    {
+                        "suffix":  "093052",
+                        "source":  "Screenshot_20260701_093052_Chrome.jpg",
+                        "source_sha256":  "3323B9F3C2DC6DF95E724D7B4DD8FF0D38E4C02178E943B85A04C6D24263E79C",
+                        "transcript":  "093052.md",
+                        "transcript_sha256":  "5CFFD1A689C50F132F3B20134CA3C22AB387261EE3ABD92FC5F993E14716D349",
+                        "characters":  7724,
+                        "tiles":  4
+                    },
+                    {
+                        "suffix":  "094941",
+                        "source":  "Screenshot_20260701_094941_Chrome.jpg",
+                        "source_sha256":  "6D97A18582ADB9BB200B08C4529EA2C4CEEF9F80BC342707D1C553078E72B5B2",
+                        "transcript":  "094941.md",
+                        "transcript_sha256":  "87BFFC3698D56496659DF556EE1E6CDC530F54BA52443843A16D18057DF30036",
+                        "characters":  6018,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "095042",
+                        "source":  "Screenshot_20260701_095042_Chrome.jpg",
+                        "source_sha256":  "F3579E113AF1518C35830BE3F2A3931E9D3D8A05D10F531822BA22C9B2615C95",
+                        "transcript":  "095042.md",
+                        "transcript_sha256":  "62CFED563B19EC94C1BC876D48E1F0D34E9D255E66FD39CFF5D902059BC94754",
+                        "characters":  6914,
+                        "tiles":  6
+                    },
+                    {
+                        "suffix":  "095143",
+                        "source":  "Screenshot_20260701_095143_Chrome.jpg",
+                        "source_sha256":  "2619AFA4B1903E97CCB2E5E777DCDDE2A64981A8EB1D342DF2B35D8481F7A59F",
+                        "transcript":  "095143.md",
+                        "transcript_sha256":  "829222DDB252F1B633B36F719B5FBB36BF28DBA6AAE1FE514B2C510D4FB34C4D",
+                        "characters":  7777,
+                        "tiles":  5
+                    }
+                ]
+}

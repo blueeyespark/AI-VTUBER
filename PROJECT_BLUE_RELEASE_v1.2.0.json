@@ -1,0 +1,112 @@
+{
+  "payload": {
+    "format": "project-blue-release",
+    "version": 1,
+    "blue_version": "1.2.0",
+    "created_at": "2026-07-03T16:57:25.409556+00:00",
+    "files": [
+      {
+        "path": ".gitignore",
+        "bytes": 98,
+        "sha256": "5f202cbecf6664ea8eb90bc7d7400fe8528d50f1812e6fa80fad3bcb178f29f0"
+      },
+      {
+        "path": "pyproject.toml",
+        "bytes": 450,
+        "sha256": "4b435b3212b0a17f54ff6a1e2ddec63e719b2f7e0f55b1eb2f8c37202011f8ba"
+      },
+      {
+        "path": "README.md",
+        "bytes": 15431,
+        "sha256": "d00a349daaf61c4086953dcd1cbceeaa5029857feade8054c328fe06385adcfc"
+      },
+      {
+        "path": "run_blue.cmd",
+        "bytes": 83,
+        "sha256": "ed4d31d356cef0075d8d43c225cdf9760663f4860cb5cc2b3e23ea5f6d0672d9"
+      },
+      {
+        "path": "run_blue.ps1",
+        "bytes": 187,
+        "sha256": "92ce00171161cde5d75bfd00de43a376c52f7ae950f2c6d2be9c0b8bfff1a75b"
+      },
+      {
+        "path": "src/project_blue/__init__.py",
+        "bytes": 62,
+        "sha256": "9f003729ac40da0916ca47832a8b469884874f3f95f0b1c2a5f2e64cde904109"
+      },
+      {
+        "path": "src/project_blue/__main__.py",
+        "bytes": 60,
+        "sha256": "f57b5daabda0b2e4f0c6ad6b07c3bff5628f2221e7ebf2841cef8bf3deedf7e1"
+      },
+      {
+        "path": "src/project_blue/cli.py",
+        "bytes": 51636,
+        "sha256": "14194a8508ae25581ba9f627db3fd34cb3e32d5a0400c4e62fd7c35bab763c0f"
+      },
+      {
+        "path": "src/project_blue/config.py",
+        "bytes": 1109,
+        "sha256": "bdda310387cc45dbb7d367113e7ea7092c57e5f8c023a66cc22f8f8c0740e906"
+      },
+      {
+        "path": "src/project_blue/constitution.py",
+        "bytes": 1394,
+        "sha256": "077213730b843cff87a200c438df1b127b3bb002c206c29d1e771f5618a65fcb"
+      },
+      {
+        "path": "src/project_blue/core.py",
+        "bytes": 98581,
+        "sha256": "21cca1174854a4ee2e236882f588f25d396d8e60b01232a4719738518eef2cd2"
+      },
+      {
+        "path": "src/project_blue/dashboard.py",
+        "bytes": 19824,
+        "sha256": "c4b9246ba5d95cdd2d2a27e9adccd365a8f1e76bab590600e5b04808780382c0"
+      },
+      {
+        "path": "src/project_blue/data/constitution.json",
+        "bytes": 2572,
+        "sha256": "0168c8292c6a6342f484e2c3375c154bcce4e9772c6f4ea2510fa3cb7f2d151e"
+      },
+      {
+        "path": "src/project_blue/policy.py",
+        "bytes": 2080,
+        "sha256": "a8f9d44b4135a74e156cd5dbbb9132e4efc36b25faf0f0219f68316b459b46b8"
+      },
+      {
+        "path": "src/project_blue/providers.py",
+        "bytes": 2747,
+        "sha256": "05a869b7d13d3510e7c4218bca81348dfd110b56b095bb16415be8ca16d78200"
+      },
+      {
+        "path": "src/project_blue/storage.py",
+        "bytes": 71069,
+        "sha256": "581d4c2ac06954a2605ffde3a8af4f0e0e44bdaf564e24dfd376b8c98685f1b7"
+      },
+      {
+        "path": "src/project_blue/windows_security.py",
+        "bytes": 2507,
+        "sha256": "b37fe320f58573cfcd470d3b115f6adb4732207a5bd759bcf81394ff0603ed46"
+      },
+      {
+        "path": "tests/test_constitution_policy.py",
+        "bytes": 1751,
+        "sha256": "99b4ac9c52a2e07b0ab5c46b85fe73fe0efed8dfe4b05f756c207d0b6e25dc7d"
+      },
+      {
+        "path": "tests/test_dashboard.py",
+        "bytes": 6878,
+        "sha256": "121e418cf4ca6bf516f9f081066eaca34ab7e5418081afb1933d3aab417c6d92"
+      },
+      {
+        "path": "tests/test_storage_core.py",
+        "bytes": 45559,
+        "sha256": "51cff8fa25d219b32e0b0587afb49f0eb5f11c7ac9487bc4f25adee28533cd9c"
+      }
+    ]
+  },
+  "signature_algorithm": "HMAC-SHA256",
+  "signature": "96b574e05f9f2cd56bd729b345b5785cb5d9484800b30d1d9554f012a3b6d25a"
+}

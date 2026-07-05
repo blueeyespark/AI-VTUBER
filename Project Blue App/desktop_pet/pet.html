@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Blue 3D Pet - OBS Capture</title>
+  <link rel="stylesheet" href="body.css">
+</head>
+<body>
+  <div id="handle">BLUE <span>drag</span></div>
+  <canvas id="body"></canvas>
+  <div id="mood">Bond 0</div>
+  <div id="buttons">
+    <button id="control">Controls</button>
+    <button id="wander">Pause</button>
+  </div>
+  <script type="importmap">
+  {"imports":{
+    "three":"./node_modules/three/build/three.module.js",
+    "three/addons/":"./node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm":"./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+  }}
+  </script>
+  <script type="module" src="pet-renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+:root { color-scheme: dark; font-family: "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+#body { width: 100%; height: 100%; display: block; }
+#handle { position: absolute; z-index: 4; top: 6px; left: 12px; right: 12px;
+  -webkit-app-region: drag; background: #102238b8; border: 1px solid #54b4ff88;
+  border-radius: 12px; padding: 7px 10px; color: white; font-weight: 800; letter-spacing: .18em; }
+#handle span { float: right; color: #9ab2c9; font-size: 11px; letter-spacing: normal; }
+#mood { position: absolute; left: 14px; top: 46px; color: #dff4ff; background: #102238b8;
+  border-radius: 12px; padding: 7px 10px; pointer-events: none; }
+#buttons { position: absolute; left: 14px; right: 14px; bottom: 10px; display: flex; gap: 7px; }
+button { -webkit-app-region: no-drag; border: 1px solid #82ceff; border-radius: 14px;
+  padding: 8px 12px; background: #1672b8d8; color: white; font-weight: 700; cursor: pointer; }

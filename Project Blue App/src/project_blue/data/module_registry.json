@@ -1,0 +1,21 @@
+{
+  "schema": "project-blue-module-registry-v1",
+  "version": "2.2.0",
+  "modules": [
+    {"id":"core","name":"Blue Core","phase":1,"status":"active","risk":"high","purpose":"Identity orchestration, conversation, provider abstraction, policy, and capability routing."},
+    {"id":"memory","name":"Blue Memory","phase":1,"status":"active","risk":"high","purpose":"User-controlled memory, retrieval, projects, provenance, retention, and search."},
+    {"id":"guardian","name":"Blue Guardian","phase":1,"status":"active","risk":"critical","purpose":"Authentication, authorization, integrity, audit, approvals, vault, backup, and recovery."},
+    {"id":"archive","name":"Blue Archive","phase":1,"status":"active","risk":"high","purpose":"Searchable conversations, sources, versions, decisions, artifacts, and history."},
+    {"id":"forge","name":"Blue Forge","phase":2,"status":"foundation","risk":"high","purpose":"Provenance-tracked creation, approval-gated file proposals, releases, and bounded test runners."},
+    {"id":"laboratory","name":"Blue Laboratory","phase":2,"status":"active","risk":"medium","purpose":"Separate ideas, hypotheses, experiments, and verified findings with assumptions and evidence."},
+    {"id":"academy","name":"Blue Academy","phase":2,"status":"foundation","risk":"medium","purpose":"Citation-backed answers, lessons, assessments, and human-reviewed learning."},
+    {"id":"network","name":"Blue Network","phase":3,"status":"planned","risk":"critical","purpose":"Authenticated trusted-host communication, revocation, and conflict-aware synchronization."},
+    {"id":"presence","name":"Blue Presence","phase":3,"status":"desktop_foundation","risk":"high","purpose":"Desktop body, voice, OBS visibility, invitations, consent indicators, and future platform adapters."},
+    {"id":"enterprise","name":"Blue Enterprise","phase":4,"status":"partial","risk":"high","purpose":"Projects and tasks now; scheduling, inventory, analytics, and team coordination later."},
+    {"id":"finance","name":"Blue Finance","phase":4,"status":"deferred","risk":"critical","purpose":"Audited budgeting and records only after formal policy, separation of duties, and transaction controls."},
+    {"id":"robotics","name":"Blue Robotics","phase":5,"status":"research_only","risk":"critical","purpose":"Simulation-first body adapters, diagnostics, bounded motion, maintenance, and emergency stop."},
+    {"id":"explorer","name":"Blue Explorer","phase":5,"status":"deferred","risk":"critical","purpose":"Peaceful scientific, environmental, inspection, and disaster-support missions."},
+    {"id":"continuity","name":"Blue Continuity","phase":1,"status":"active","risk":"critical","purpose":"Versioned backups, checksums, restore drills, migration records, and recovery planning."},
+    {"id":"governance","name":"Blue Governance","phase":1,"status":"active","risk":"critical","purpose":"Constitution, principals, approvals, quorum, decisions, policy history, and stewardship."}
+  ]
+}
