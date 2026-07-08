@@ -11,13 +11,15 @@
     <img src="../src/project_blue/data/blue_avatar.png" alt="Blue">
     <div class="brand"><h1>Project Blue</h1><p>Local AI workbench</p></div>
     <div class="command-shell">
-      <span aria-hidden="true">⌕</span>
+      <span aria-hidden="true">âŒ•</span>
       <input id="commandSearch" list="blueCommands" autocomplete="off"
-        placeholder="Search controls or type a command… (Ctrl+K)"
+        placeholder="Search controls or type a commandâ€¦ (Ctrl+K)"
         aria-label="Search Blue controls">
       <datalist id="blueCommands">
         <option value="New conversation"></option>
         <option value="Chat"></option>
+        <option value="Share"></option>
+        <option value="Voice"></option>
         <option value="Presence and privacy"></option>
         <option value="Create and idea lab"></option>
         <option value="Expansion foundations"></option>
@@ -37,17 +39,43 @@
     <span id="microphoneState" class="status-chip safe">Microphone: Off</span>
     <span id="captureState" class="status-chip safe">Auto capture: Off</span>
   </div>
+  <div id="modelPickerOverlay" class="model-picker-overlay" hidden>
+    <section class="model-picker-dialog" aria-labelledby="modelPickerTitle">
+      <h2 id="modelPickerTitle">Choose VTuber Model</h2>
+      <p class="hint">Pick the model Blue should use for this session. 3D VRM models use the full rig; 2D image models use desktop movement, bobbing, tilt, speech, and gesture motion.</p>
+      <div id="startupModelChoices" class="model-choice-grid"></div>
+      <div class="row">
+        <button id="startupModelUse">Use Selected Model</button>
+        <button id="startupModelKeep" class="secondary">Keep Current</button>
+      </div>
+    </section>
+  </div>
+  <div id="ollamaSetupOverlay" class="model-picker-overlay" hidden>
+    <section class="model-picker-dialog" aria-labelledby="ollamaSetupTitle">
+      <h2 id="ollamaSetupTitle">Local AI Setup</h2>
+      <p class="hint">Project Blue can use Ollama to run local models on this PC so it does not need OpenAI for as much thinking. Ollama is optional and installs separately.</p>
+      <pre id="ollamaSetupDetails">Checking local model setup...</pre>
+      <div class="row">
+        <button id="ollamaDownload">Download Ollama</button>
+        <button id="ollamaInstalled" class="secondary">Already Installed</button>
+        <button id="ollamaLater" class="secondary">Ask Later</button>
+        <button id="ollamaSkip" class="secondary">Skip</button>
+      </div>
+    </section>
+  </div>
   <nav class="tab-bar" aria-label="Blue control panel sections">
     <div class="nav-heading">Workspace</div>
-    <button data-tab="chat" data-icon="◆" aria-selected="true">Chat</button>
-    <button data-tab="presence" data-icon="◉">Presence</button>
-    <button data-tab="create" data-icon="✦">Create</button>
-    <button data-tab="expansion" data-icon="▦">Expansion</button>
-    <button data-tab="motion" data-icon="➜">Motion</button>
-    <button data-tab="discord" data-icon="◌">Discord</button>
-    <button data-tab="security" data-icon="⌾">Security</button>
-    <button data-tab="system" data-icon="⚙">System</button>
-    <div class="nav-note">Ctrl+1…8 switches views<br>Ctrl+K searches controls</div>
+    <button data-tab="chat" data-icon="â—†" aria-selected="true">Chat</button>
+    <button data-tab="share" data-icon="+">Share</button>
+    <button data-tab="voice" data-icon="!">Voice</button>
+    <button data-tab="presence" data-icon="â—‰">Presence</button>
+    <button data-tab="create" data-icon="âœ¦">Create</button>
+    <button data-tab="expansion" data-icon="â–¦">Expansion</button>
+    <button data-tab="motion" data-icon="âžœ">Motion</button>
+    <button data-tab="discord" data-icon="â—Œ">Discord</button>
+    <button data-tab="security" data-icon="âŒ¾">Security</button>
+    <button data-tab="system" data-icon="âš™">System</button>
+    <div class="nav-note">Ctrl+1...0 switches views<br>Ctrl+K searches controls</div>
   </nav>
   <main>
     <section class="presence-panel" data-panel="presence" hidden>
@@ -82,22 +110,35 @@
         <select id="conversationSelect" aria-label="Current conversation"></select>
         <input id="newConversationName" maxlength="120" placeholder="New conversation name">
         <button id="newConversation">New</button>
+        <button id="deleteConversation" class="secondary" title="Delete this chat only. Learned memories, research notes, sources, and artifacts stay saved.">Delete Chat</button>
       </div>
-      <div id="messages"><p><b>blue&gt;</b> I am here. What shall we work on?</p></div>
+      <div id="messages" title="Drop files, images, folders, or text here to share with Blue"><p><b>blue&gt;</b> I am here. What shall we work on?</p></div>
       <div class="row">
         <input id="prompt" autocomplete="off" placeholder="Talk to Blue...">
         <button id="listen" title="Listen locally for up to eight seconds">Listen Once</button>
+        <button id="chatVoiceToggle" class="secondary" title="Turn Blue's spoken replies on or off">Voice: On</button>
+        <button id="chatVoiceSkip" class="secondary" title="Stop Blue's current spoken reply">Skip Voice</button>
         <button id="send">Send</button>
       </div>
-      <p class="hint">Listen Once uses the local Windows speech recognizer. It stops automatically and places text here for you to review before sending.</p>
+      <p class="hint">Drop files, images, folders, or text into the chat window to share them with Blue. Deleting a chat removes old messages only; learned memories, research notes, sources, and artifacts stay saved.</p>
     </section>
-    <section data-panel="chat">
+    <section id="deepResearchPrompt" class="model-picker-overlay" hidden>
+      <div class="model-picker-dialog">
+        <h2>Start Deep Search?</h2>
+        <pre id="deepResearchPromptDetails">Blue wants to research a learning topic.</pre>
+        <div class="row">
+          <button id="deepResearchStart">Start Deep Search</button>
+          <button id="deepResearchLater" class="secondary">Not Now</button>
+        </div>
+      </div>
+    </section>
+    <section data-panel="share" hidden>
       <h2>Paste or Drop Anything</h2>
       <textarea id="pasteBox" placeholder="Paste text, notes, or a link here - like a normal chat box."></textarea>
       <div id="dropZone">Drop files, images, or folders here</div>
       <button id="pasteSend">Send Pasted Content</button>
     </section>
-    <section data-panel="chat">
+    <section data-panel="share" hidden>
       <h2>Browse and Share</h2>
       <div class="grid">
         <button id="files">Files</button><button id="images">Images</button>
@@ -106,24 +147,85 @@
       </div>
       <textarea id="ocrResult" readonly placeholder="Local OCR results will appear here."></textarea>
       <button id="useOcr" class="secondary" disabled>Use OCR Text in Paste Box</button>
+      <div class="artifact-preview">
+        <div class="row">
+          <button id="referenceStatus" class="secondary">Current Outfit Reference</button>
+          <button id="referenceUseLatest" class="secondary">Use Latest as Base Ref</button>
+          <button id="styleReferenceUseLatest" class="secondary">Use Latest as Outfit Ref</button>
+          <button id="referenceClear" class="secondary">Clear Base Ref</button>
+          <button id="styleReferenceClear" class="secondary">Clear Outfit Ref</button>
+        </div>
+        <div id="referenceSummary" class="hint">Dropped images are shared context first. Say "use the dropped image as the base reference" for the character, or "use the dropped image as the outfit reference" for a second clothing/style photo.</div>
+      </div>
       <p class="hint">Folders are indexed read-only. Non-text files are copied into Blue's private inbox.</p>
       <p class="hint">Image scanning uses Windows.Media.Ocr on this PC. It does not watch the screen or upload the image, and extracted text is never sent automatically.</p>
     </section>
-    <section data-panel="chat">
+    <section data-panel="voice" hidden>
       <h2>Blue's Voice</h2>
       <div class="grid">
-        <button id="voiceToggle">Voice: On</button><button id="voiceTest">Test Voice</button>
+        <button id="voiceToggle">Voice: On</button><button id="voiceSkip" class="secondary">Skip Voice</button>
+        <button id="voiceTest">Test Voice</button>
+        <button id="wakeListen">Wake Listen</button><button id="saveVoiceSettings" class="secondary">Save Voice Settings</button>
+        <button id="enrollOwnerPhrase" class="secondary">Enroll Owner Phrase</button>
+        <button id="refreshMicrophones" class="secondary">Refresh Mics</button>
+        <button id="openMicSettings" class="secondary">Windows Mic Settings</button>
       </div>
       <select id="voiceSelect" aria-label="Choose an installed voice"></select>
-      <p class="hint">Uses a free voice already installed on this PC. No purchase or cloud account is required.</p>
+      <label class="field-label">Voice speed
+        <input id="voiceRate" type="range" min="0.65" max="1.35" step="0.01" value="0.94">
+      </label>
+      <label class="field-label">Voice pitch
+        <input id="voicePitch" type="range" min="0.7" max="1.4" step="0.01" value="1.02">
+      </label>
+      <label class="field-label">Voice volume
+        <input id="voiceVolume" type="range" min="0.2" max="1" step="0.01" value="0.95">
+      </label>
+      <label class="field-label">Microphone input
+        <select id="microphoneSelect" aria-label="Choose a microphone input"></select>
+      </label>
+      <label class="field-label">Wake words, comma-separated
+        <input id="wakeWords" maxlength="240" placeholder="hey blue, hay blue, blue">
+      </label>
+      <label class="field-label">Wake listen seconds
+        <input id="wakeListenSeconds" type="number" min="3" max="15" value="10">
+      </label>
+      <label class="check-row" for="ownerPhraseLock">
+        <input id="ownerPhraseLock" type="checkbox">
+        Require owner phrase before activation
+      </label>
+      <label class="field-label">Owner phrase lock
+        <input id="ownerPhrase" maxlength="120" placeholder="A private phrase only you say">
+      </label>
+      <textarea id="customVoiceNote" maxlength="500" placeholder="Notes for a future trained/custom voice provider..."></textarea>
+      <p class="hint">Wake words follow the active model: qwen models use "hey qwen"; Blue models use "hey blue". Windows speech listens through the current Windows default input device. Pick a mic here for Blue's settings, then use Windows Mic Settings to make it the default if Wake Listen cannot hear you.</p>
     </section>
-    <section data-panel="chat">
+    <section data-panel="voice" hidden>
       <h2>Local AI Brain</h2>
       <div class="grid">
         <button id="providerStatus">Check AI Model</button>
         <button id="connectModel">Connect Installed Model</button>
         <button id="loadHistory">Show Conversation History</button>
       </div>
+      <label class="check-row" for="preferLocalProvider">
+        <input id="preferLocalProvider" type="checkbox">
+        Prefer local model before OpenAI when Ollama is available
+      </label>
+      <label class="field-label">RAM budget for local thinking (GB)
+        <input id="localRamGb" type="number" min="1" max="256" value="8">
+      </label>
+      <div class="ram-presets" aria-label="RAM budget presets">
+        <button class="secondary" data-ram-preset="8">8 GB</button>
+        <button class="secondary" data-ram-preset="16">16 GB</button>
+        <button class="secondary" data-ram-preset="32">32 GB</button>
+        <button class="secondary" data-ram-preset="64">64 GB</button>
+      </div>
+      <label class="field-label">Ollama context tokens
+        <input id="ollamaContextTokens" type="number" min="1024" max="32768" step="512" value="4096">
+      </label>
+      <label class="field-label">Ollama GPU layers (-1 = auto, 0 = CPU only)
+        <input id="ollamaGpuLayers" type="number" min="-1" max="999" value="-1">
+      </label>
+      <button id="saveLocalCompute" class="secondary">Save Local Compute Settings</button>
       <p class="hint">Blue never downloads or purchases a model silently. If Ollama and a model are already installed locally, Connect Installed Model selects it for contextual conversation.</p>
     </section>
     <section data-panel="create" hidden>
@@ -145,6 +247,23 @@
         <button id="researchCatalog">Research Sources</button>
       </div>
       <p class="hint">Ideas are not presented as facts. Hypotheses need testing; findings need evidence and confidence. Every record is local, searchable, and audited.</p>
+      <h2>Learning Queue</h2>
+      <input id="learningTopic" maxlength="240" placeholder="What should Blue learn how to do?">
+      <textarea id="learningNotes" maxlength="4000" placeholder="Optional notes, goals, examples, or limits."></textarea>
+      <div class="grid">
+        <button id="learningSave">Save Learning Request</button>
+        <button id="learningResearch">Deep Research Online</button>
+        <button id="learningList" class="secondary">Show Learning Queue</button>
+      </div>
+      <pre id="learningDetails">Say "hey qwen, can you learn how to..." or save a request here.</pre>
+      <h2>Agent Mode</h2>
+      <input id="agentGoal" maxlength="500" placeholder="What should the Project Blue agent work toward?">
+      <div class="grid">
+        <button id="agentStart">Start Agent Plan</button>
+        <button id="agentMiniMax">Run MiniMax Step</button>
+        <button id="agentStatus" class="secondary">Show Agent Status</button>
+      </div>
+      <pre id="agentDetails">Agent mode plans goals, tracks steps, queues approvals, and routes work through Project Blue's safe tools. MiniMax chooses a next step by maximizing progress and minimizing risk/cost.</pre>
     </section>
     <section data-panel="expansion" hidden>
       <h2>Safe Expansion Foundations</h2>
@@ -177,10 +296,18 @@
         <button id="expansionSave">Save Safe Foundation Record</button>
         <button id="expansionRefresh" class="secondary">Refresh Domain Status</button>
       </div>
-      <pre id="expansionDetails">Loading expansion foundations…</pre>
+      <pre id="expansionDetails">Loading expansion foundationsâ€¦</pre>
     </section>
     <section data-panel="motion" hidden>
       <h2>Movement and Expressions</h2>
+      <label class="field-label">Active VTuber model
+        <select id="vtuberModelSelect"></select>
+      </label>
+      <div class="grid">
+        <button id="applyVtuberModel">Switch Model</button>
+        <button id="refreshVtuberModels" class="secondary">Refresh Models</button>
+      </div>
+      <pre id="vtuberModelDetails">Loading model list...</pre>
       <div class="action-grid">
         <button data-action="walk">Walk Now</button>
         <button data-action="run">Run Now</button>
@@ -188,6 +315,7 @@
         <button data-action="smile">Smile</button>
         <button data-action="look">Look Around</button>
         <button data-action="nod">Nod</button>
+        <button data-action="outfit">Outfit</button>
         <button data-action="cheer">Cheer</button>
         <button data-action="lean">Lean</button>
         <button data-action="stretch">Stretch</button>
@@ -198,7 +326,7 @@
     <section data-panel="motion" hidden>
       <h2>Desktop and OBS</h2>
       <div class="grid">
-        <button id="showPet">Show Pet</button><button id="wander">Pause Wandering</button>
+        <button id="showPet">Show Pet</button><button id="wander">Resume Wandering</button>
       </div>
       <p class="hint">In OBS, add a Window Capture source named "Blue 3D Pet - OBS Capture".</p>
     </section>
@@ -245,11 +373,91 @@
     </section>
     <section data-panel="system" hidden>
       <h2>Safe PC Help</h2>
+      <div class="artifact-preview">
+        <h2>Away and Autonomy Rules</h2>
+        <label class="check-row" for="awayMode">
+          <input id="awayMode" type="checkbox">
+          Away mode: Blue may keep working on approved low-risk tasks while I am away
+        </label>
+        <label class="check-row" for="autoLowRiskTasks">
+          <input id="autoLowRiskTasks" type="checkbox">
+          Let low-risk tasks continue without more approval prompts
+        </label>
+        <label class="check-row" for="askBeforeDeepResearch">
+          <input id="askBeforeDeepResearch" type="checkbox">
+          Ask me before starting deep web research
+        </label>
+        <label class="check-row" for="phoneApprovalQueue">
+          <input id="phoneApprovalQueue" type="checkbox">
+          Save approval questions for the phone bridge
+        </label>
+        <label class="check-row" for="selfLearningSuggestions">
+          <input id="selfLearningSuggestions" type="checkbox">
+          Let Blue suggest learning topics it may need, then ask before deep research
+        </label>
+        <label class="check-row" for="selfImprovementProposals">
+          <input id="selfImprovementProposals" type="checkbox">
+          Let Blue propose safe fixes when it notices weak behavior in itself
+        </label>
+        <label class="check-row" for="phoneBridgeNoToken">
+          <input id="phoneBridgeNoToken" type="checkbox">
+          Let phone app connect without a token on this trusted network
+        </label>
+        <label class="check-row" for="prepareHighRiskWhileWaiting">
+          <input id="prepareHighRiskWhileWaiting" type="checkbox">
+          For high-risk tasks, prepare the plan and ask me before running it
+        </label>
+        <label class="field-label">Full Control session minutes
+          <input id="fullControlMinutes" type="number" min="5" max="240" step="5" value="60">
+        </label>
+        <textarea id="autonomyNotes" maxlength="2000" placeholder="Optional rules for what Blue should do while you are away"></textarea>
+        <div class="grid">
+          <button id="saveAutonomy">Save Away Rules</button>
+          <button id="fullControlGrant">Grant Full Control Session</button>
+          <button id="fullControlRevoke" class="secondary">Revoke Full Control</button>
+          <button id="phoneBridgeStarter" class="secondary">Make Network Bridge Starter</button>
+          <button id="phoneApprovalQueueShow" class="secondary">Show Phone Approval Queue</button>
+          <button id="phoneBridgeStart">Start Network Bridge</button>
+          <button id="phoneBridgeStop" class="secondary">Stop Network Bridge</button>
+        </div>
+        <pre id="phoneBridgeDetails">Network bridge is stopped.</pre>
+        <pre id="autonomyDetails">Loading away rules...</pre>
+      </div>
       <div class="grid">
         <button id="doctor">Run Blue Doctor</button><button id="systemInfo">PC and Display Info</button>
         <button id="openProject">Open Blue Folder</button>
         <button id="pendingApprovals">Pending Approvals</button>
         <button id="auditEvents">Recent Audit Events</button>
+        <button id="pcActionGuidelines">PC Action Guidelines</button>
+      </div>
+      <label class="field-label">PC action
+        <select id="pcActionType">
+          <option value="open_path">Open app, file, or folder</option>
+          <option value="open_url">Open web link</option>
+          <option value="create_text_file">Create text file</option>
+          <option value="append_text_file">Append text file</option>
+          <option value="overwrite_text_file">Overwrite text file</option>
+        </select>
+      </label>
+      <input id="pcActionTarget" maxlength="2000" placeholder="Path or https:// link">
+      <textarea id="pcActionContent" maxlength="100000" placeholder="Text content for create/append/overwrite actions"></textarea>
+      <label class="check-row" for="pcActionApprove">
+        <input id="pcActionApprove" type="checkbox">
+        I approve this file write after reviewing the target and content
+      </label>
+      <label class="check-row" for="pcActionNoMoreApprovals">
+        <input id="pcActionNoMoreApprovals" type="checkbox">
+        For this low-risk task, continue without asking me again
+      </label>
+      <button id="pcActionRun">Run PC Action</button>
+      <div class="artifact-preview">
+        <div class="row">
+          <button id="artifactRefresh" class="secondary">Latest Result</button>
+          <button id="artifactOpen">Open Result</button>
+          <button id="artifactReveal" class="secondary">Show Folder</button>
+        </div>
+        <div id="artifactSummary" class="hint">Generated files, PNG previews, model folders, and app outputs will appear here after Blue makes or opens them.</div>
+        <img id="artifactImage" alt="Latest generated result preview" hidden>
       </div>
       <pre id="status">Blue only performs bounded, visible actions. Project changes remain approval-gated.</pre>
     </section>

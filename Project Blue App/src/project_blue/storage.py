@@ -1126,6 +1126,17 @@ class BlueStorage:
         ).fetchone()
         return None if row is None else dict(row)
 
+    def delete_conversation(self, identifier: str) -> dict[str, Any] | None:
+        conversation = self.get_conversation(identifier)
+        if conversation is None:
+            return None
+        self.connection.execute(
+            "DELETE FROM conversations WHERE id = ?",
+            (conversation["id"],),
+        )
+        self.connection.commit()
+        return conversation
+
     def add_conversation_entry(
         self, conversation_id: str, role: str, content: str, provider: str
     ) -> str:

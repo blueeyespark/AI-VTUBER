@@ -11,6 +11,7 @@ This is the first executable Project Blue foundation. It implements:
 - ranked retrieval across memories, sources, projects, tasks, and indexed files;
 - recent-turn conversation context for connected local language models;
 - useful grounded responses when no generative model is installed;
+- optional OpenAI provider support through `OPENAI_API_KEY`;
 - diagnostics, export, and backup commands;
 - persistent projects and tasks;
 - accountable approval-request and decision records;
@@ -506,6 +507,29 @@ If Ollama is installed and running:
 ```
 
 Blue only calls the local Ollama endpoint at `http://127.0.0.1:11434` by default.
+
+## Optional OpenAI chat
+
+Blue can use OpenAI for generated conversation. The API key is read from the
+environment and is not stored in Blue's config:
+
+```powershell
+setx OPENAI_API_KEY "your_api_key_here"
+```
+
+Restart your terminal after `setx`, then run:
+
+```powershell
+.\run_blue.cmd openai-setup --model gpt-5.5
+.\run_blue.cmd provider-check
+.\run_blue.cmd chat "Introduce yourself."
+```
+
+To switch back to offline mode:
+
+```powershell
+.\run_blue.cmd config provider offline
+```
 
 ## Tests
 

@@ -3,8 +3,18 @@ const messages = document.querySelector("#messages");
 const pasteBox = document.querySelector("#pasteBox");
 const dropZone = document.querySelector("#dropZone");
 const voiceSelect = document.querySelector("#voiceSelect");
+const microphoneSelect = document.querySelector("#microphoneSelect");
+const voiceRate = document.querySelector("#voiceRate");
+const voicePitch = document.querySelector("#voicePitch");
+const voiceVolume = document.querySelector("#voiceVolume");
+const wakeWords = document.querySelector("#wakeWords");
+const wakeListenSeconds = document.querySelector("#wakeListenSeconds");
+const ownerPhraseLock = document.querySelector("#ownerPhraseLock");
+const ownerPhrase = document.querySelector("#ownerPhrase");
+const customVoiceNote = document.querySelector("#customVoiceNote");
 let voiceEnabled = localStorage.getItem("blueVoiceEnabled") !== "false";
 let voices = [];
+let microphones = [];
 let listening = false;
 const presenceState = document.querySelector("#presenceState");
 const visionState = document.querySelector("#visionState");
@@ -20,12 +30,30 @@ const commandSearch = document.querySelector("#commandSearch");
 const footerConversation = document.querySelector("#footerConversation");
 const footerDiscord = document.querySelector("#footerDiscord");
 const footerSecurity = document.querySelector("#footerSecurity");
+const modelPickerOverlay = document.querySelector("#modelPickerOverlay");
+const startupModelChoices = document.querySelector("#startupModelChoices");
+const ollamaSetupOverlay = document.querySelector("#ollamaSetupOverlay");
+const ollamaSetupDetails = document.querySelector("#ollamaSetupDetails");
+const deepResearchPrompt = document.querySelector("#deepResearchPrompt");
+const deepResearchPromptDetails = document.querySelector("#deepResearchPromptDetails");
+const vtuberModelSelect = document.querySelector("#vtuberModelSelect");
+const vtuberModelDetails = document.querySelector("#vtuberModelDetails");
+const artifactSummary = document.querySelector("#artifactSummary");
+const artifactImage = document.querySelector("#artifactImage");
+const referenceSummary = document.querySelector("#referenceSummary");
+const styleReferenceUseLatest = document.querySelector("#styleReferenceUseLatest");
+const styleReferenceClear = document.querySelector("#styleReferenceClear");
+const autonomyDetails = document.querySelector("#autonomyDetails");
+const phoneBridgeDetails = document.querySelector("#phoneBridgeDetails");
 let lastOcrText = "";
+let vtuberModels = [];
+let selectedStartupModel = "";
+let pendingDeepResearchTopic = "";
 const validTabs = new Set([
-  "chat", "presence", "create", "expansion", "motion", "discord", "security", "system"
+  "chat", "share", "voice", "presence", "create", "expansion", "motion", "discord", "security", "system"
 ]);
 const tabOrder = [
-  "chat", "presence", "create", "expansion", "motion", "discord", "security", "system"
+  "chat", "share", "voice", "presence", "create", "expansion", "motion", "discord", "security", "system"
 ];
 
 function selectTab(value) {
@@ -54,6 +82,8 @@ const commandActions = [
     document.querySelector("#newConversationName").focus();
   } },
   { terms: ["chat", "talk"], run: () => selectTab("chat") },
+  { terms: ["share", "paste", "drop", "clipboard", "files", "images", "ocr", "scan image"], run: () => selectTab("share") },
+  { terms: ["voice", "wake", "listen", "owner phrase", "qwen"], run: () => selectTab("voice") },
   { terms: ["presence", "privacy"], run: () => selectTab("presence") },
   { terms: ["create", "idea", "lab"], run: () => selectTab("create") },
   { terms: ["expansion", "finance", "robotics", "mobile", "network", "world model"], run: () => selectTab("expansion") },
@@ -61,12 +91,16 @@ const commandActions = [
   { terms: ["discord"], run: () => selectTab("discord") },
   { terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("security") },
   { terms: ["system", "health", "doctor"], run: () => selectTab("system") },
+  { terms: ["latest result", "show result", "preview result", "artifact"], run: () => {
+    selectTab("system");
+    loadCurrentArtifact();
+  } },
   { terms: ["share files", "files"], run: () => {
-    selectTab("chat");
+    selectTab("share");
     document.querySelector("#files").click();
   } },
   { terms: ["scan image", "ocr", "image text"], run: () => {
-    selectTab("chat");
+    selectTab("share");
     document.querySelector("#scanImage").click();
   } }
 ];
@@ -162,6 +196,58 @@ function formatActivity(records) {
   ).join("\n");
 }
 
+function renderArtifactPreview(artifact) {
+  if (!artifact) {
+    artifactSummary.textContent = "No generated result is ready yet.";
+    artifactImage.hidden = true;
+    artifactImage.removeAttribute("src");
+    return;
+  }
+  const lines = [
+    `${artifact.title || "Latest result"} (${artifact.kind || "file"})`,
+    artifact.exists ? artifact.path : `Missing: ${artifact.path}`,
+    artifact.note || "",
+    artifact.imageSize ? `Image: ${artifact.imageSize.width} x ${artifact.imageSize.height}` : ""
+  ].filter(Boolean);
+  artifactSummary.textContent = lines.join("\n");
+  if (artifact.canInlinePreview && artifact.imageDataUrl) {
+    artifactImage.src = artifact.imageDataUrl;
+    artifactImage.hidden = false;
+  } else {
+    artifactImage.hidden = true;
+    artifactImage.removeAttribute("src");
+  }
+}
+
+async function loadCurrentArtifact() {
+  try {
+    renderArtifactPreview(await window.bluePet.currentArtifact());
+  } catch (error) {
+    artifactSummary.textContent = `Could not load latest result: ${error.message}`;
+    artifactImage.hidden = true;
+    artifactImage.removeAttribute("src");
+  }
+}
+
+function renderOutfitReference(value) {
+  const lines = [
+    value?.message || "No outfit reference image is set.",
+    value?.ready && value?.path ? `Base: ${value.path}` : "",
+    value?.note ? `Base note: ${value.note}` : "",
+    value?.styleReady && value?.stylePath ? `Outfit/style: ${value.stylePath}` : "",
+    value?.styleNote ? `Outfit/style note: ${value.styleNote}` : ""
+  ].filter(Boolean);
+  referenceSummary.textContent = lines.join("\n");
+}
+
+async function loadOutfitReference() {
+  try {
+    renderOutfitReference(await window.bluePet.outfitReferenceStatus());
+  } catch (error) {
+    referenceSummary.textContent = `Could not load outfit reference: ${error.message}`;
+  }
+}
+
 function append(who, text) {
   const p = document.createElement("p");
   const b = document.createElement("b");
@@ -169,6 +255,116 @@ function append(who, text) {
   p.append(b, document.createTextNode(text));
   messages.append(p);
   messages.scrollTop = messages.scrollHeight;
+}
+
+function modelKindLabel(model) {
+  return `${String(model.type || "3d").toUpperCase()} ${model.format || "model"}`;
+}
+
+function renderVtuberModels(value, showStartupPicker = false) {
+  vtuberModels = Array.isArray(value?.models) ? value.models : [];
+  const current = String(value?.current || vtuberModels[0]?.id || "");
+  selectedStartupModel = current;
+  vtuberModelSelect.replaceChildren();
+  startupModelChoices.replaceChildren();
+  for (const model of vtuberModels) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = `${model.name} (${modelKindLabel(model)})`;
+    option.selected = model.id === current;
+    vtuberModelSelect.append(option);
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "model-choice";
+    card.dataset.modelId = model.id;
+    card.setAttribute("aria-selected", String(model.id === current));
+    card.innerHTML = [
+      `<strong>${escapeHtml(model.name)}</strong>`,
+      `<span>${escapeHtml(modelKindLabel(model))}</span>`,
+      `<p>${escapeHtml(model.description || "VTuber model")}</p>`
+    ].join("");
+    card.onclick = () => chooseStartupModel(model.id);
+    startupModelChoices.append(card);
+  }
+  const active = vtuberModels.find(model => model.id === current) || vtuberModels[0];
+  vtuberModelDetails.textContent = active
+    ? [
+      `Active: ${active.name}`,
+      `Type: ${modelKindLabel(active)}`,
+      `Path: ${active.path}`,
+      "",
+      active.description || ""
+    ].join("\n")
+    : "No VTuber models found.";
+  if (showStartupPicker) modelPickerOverlay.hidden = false;
+}
+
+function chooseStartupModel(id) {
+  selectedStartupModel = id;
+  for (const card of startupModelChoices.querySelectorAll(".model-choice")) {
+    card.setAttribute("aria-selected", String(card.dataset.modelId === id));
+  }
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[character]));
+}
+
+async function loadVtuberModels(showStartupPicker = false) {
+  try {
+    renderVtuberModels(await window.bluePet.vtuberModels(), showStartupPicker);
+  } catch (error) {
+    vtuberModelDetails.textContent = `Could not load VTuber models: ${error.message}`;
+  }
+}
+
+function formatOllamaSetupStatus(state) {
+  const status = state?.providerStatus || {};
+  const localReady = status.local_first_available || (
+    status.provider === "ollama" && status.available
+  );
+  return [
+    `Local-first: ${status.prefer_local_provider ? "on" : "off"}`,
+    `Ollama ready: ${localReady ? "yes" : "not yet"}`,
+    `Configured model: ${status.configured_model || "none"}`,
+    "",
+    "Download opens the official Ollama Windows page.",
+    "After installing, come back and choose Already Installed."
+  ].join("\n");
+}
+
+async function showOllamaSetupIfNeeded() {
+  try {
+    const state = await window.bluePet.setupState();
+    const status = state?.providerStatus || {};
+    const localReady = status.local_first_available || (
+      status.provider === "ollama" && status.available
+    );
+    if (localReady || ["accepted", "installed", "skipped"].includes(state?.ollamaPrompt)) {
+      return;
+    }
+    ollamaSetupDetails.textContent = formatOllamaSetupStatus(state);
+    ollamaSetupOverlay.hidden = false;
+  } catch (error) {
+    append("blue", `Ollama setup check failed: ${error.message}`);
+  }
+}
+
+async function answerOllamaSetup(choice) {
+  try {
+    const result = await window.bluePet.setupOllamaChoice(choice);
+    ollamaSetupOverlay.hidden = true;
+    append("blue", result);
+  } catch (error) {
+    ollamaSetupDetails.textContent = `Setup action failed: ${error.message}`;
+  }
 }
 
 function renderConversationHistory(text) {
@@ -209,22 +405,69 @@ async function refreshConversations() {
   renderConversationList(await window.bluePet.conversations());
 }
 
+function cleanTextForSpeech(text) {
+  return String(text || "")
+    .replace(/```[\s\S]*?```/g, " code block omitted. ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/https?:\/\/\S+/gi, " link omitted. ")
+    .replace(/[A-Za-z]:\\[^\r\n]+/g, " file path omitted. ")
+    .replace(/\b[a-f0-9]{8}-[a-f0-9-]{20,}\b/gi, " id omitted. ")
+    .replace(/\b[0-9a-f]{32,}\b/gi, " id omitted. ")
+    .replace(/^\s*\[[^\]]+\]\s*/gm, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+[.)]\s+/gm, "")
+    .replace(/[*_~>#|=[\]{}]/g, " ")
+    .replace(/[\\/]{2,}/g, " ")
+    .replace(/[-–—]{3,}/g, ". ")
+    .replace(/[.]{3,}/g, ". ")
+    .replace(/[!?]{2,}/g, match => match[0])
+    .replace(/\b(?:id|sha|url):\s*[a-z0-9._:/-]+/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 900);
+}
+
+function voiceNumberSetting(key, fallback, min, max) {
+  const value = Number(localStorage.getItem(key));
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(value, max));
+}
+
+function loadVoiceTuning() {
+  voiceRate.value = String(voiceNumberSetting("blueVoiceRate", 0.94, 0.65, 1.35));
+  voicePitch.value = String(voiceNumberSetting("blueVoicePitch", 1.02, 0.7, 1.4));
+  voiceVolume.value = String(voiceNumberSetting("blueVoiceVolume", 0.95, 0.2, 1));
+}
+
+function saveVoiceTuning() {
+  localStorage.setItem("blueVoiceRate", voiceRate.value);
+  localStorage.setItem("blueVoicePitch", voicePitch.value);
+  localStorage.setItem("blueVoiceVolume", voiceVolume.value);
+}
+
 function speak(text) {
   if (!voiceEnabled || !("speechSynthesis" in window)) return;
+  const spoken = cleanTextForSpeech(text);
+  if (!spoken) return;
   speechSynthesis.cancel();
   window.bluePet.setSpeaking(false);
-  const utterance = new SpeechSynthesisUtterance(
-    String(text).replace(/\s+/g, " ").slice(0, 900)
-  );
+  const utterance = new SpeechSynthesisUtterance(spoken);
   const selected = voices.find(voice => voice.name === voiceSelect.value);
   if (selected) utterance.voice = selected;
-  utterance.rate = 1.03;
-  utterance.pitch = 1.12;
-  utterance.volume = 0.9;
+  utterance.rate = voiceNumberSetting("blueVoiceRate", 0.94, 0.65, 1.35);
+  utterance.pitch = voiceNumberSetting("blueVoicePitch", 1.02, 0.7, 1.4);
+  utterance.volume = voiceNumberSetting("blueVoiceVolume", 0.95, 0.2, 1);
   utterance.onstart = () => window.bluePet.setSpeaking(true);
   utterance.onend = () => window.bluePet.setSpeaking(false);
   utterance.onerror = () => window.bluePet.setSpeaking(false);
   speechSynthesis.speak(utterance);
+}
+
+function skipVoice() {
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  window.bluePet.setSpeaking(false);
 }
 
 function loadVoices() {
@@ -238,16 +481,50 @@ function loadVoices() {
     voiceSelect.append(option);
   }
   const preferred = voices.find(voice => voice.name === prior)
-    || voices.find(voice => /^en/i.test(voice.lang) && /female|zira|aria|jenny/i.test(voice.name))
+    || voices.find(voice => /^en/i.test(voice.lang) && /natural|neural|online/i.test(voice.name))
+    || voices.find(voice => /^en/i.test(voice.lang) && /jenny|aria|zira|female/i.test(voice.name))
     || voices.find(voice => /^en/i.test(voice.lang))
     || voices[0];
   if (preferred) voiceSelect.value = preferred.name;
+  window.bluePet.voiceSettings()
+    .then(renderVoiceSettings)
+    .catch(error => append("blue", `Voice settings unavailable: ${error.message}`));
+}
+
+async function loadMicrophones() {
+  try {
+    microphones = await window.bluePet.microphones();
+    const previous = microphoneSelect.value;
+    microphoneSelect.replaceChildren();
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Windows default microphone";
+    microphoneSelect.append(defaultOption);
+    for (const mic of microphones) {
+      const option = document.createElement("option");
+      option.value = mic.name;
+      option.textContent = mic.name;
+      microphoneSelect.append(option);
+    }
+    if (previous && Array.from(microphoneSelect.options).some(option => option.value === previous)) {
+      microphoneSelect.value = previous;
+    }
+  } catch (error) {
+    microphoneSelect.replaceChildren();
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = `Could not list microphones: ${error.message}`;
+    microphoneSelect.append(option);
+  }
 }
 
 async function perform(action, useVoice = true) {
   try {
     const result = await action();
     append("blue", result);
+    if (typeof result === "string" && /\b(latest result|visual .*preview|preview .*ready|result is ready)\b/i.test(result)) {
+      await loadCurrentArtifact();
+    }
     if (useVoice) speak(result);
     return result;
   } catch (error) {
@@ -291,6 +568,195 @@ async function listenOnce() {
   }
 }
 
+function readVoiceSettingsForm() {
+  return {
+    wakeWords: wakeWords.value.split(",").map(value => value.trim()).filter(Boolean),
+    listenSeconds: Number(wakeListenSeconds.value || 10),
+    ownerPhraseLock: ownerPhraseLock.checked,
+    ownerPhrase: ownerPhrase.value,
+    microphoneName: microphoneSelect.value,
+    outputVoiceName: voiceSelect.value,
+    customVoiceNote: customVoiceNote.value
+  };
+}
+
+function renderVoiceSettings(value) {
+  wakeWords.value = Array.isArray(value?.wakeWords)
+    ? value.wakeWords.join(", ")
+    : "hey blue, hay blue, blue";
+  wakeListenSeconds.value = String(value?.listenSeconds || 10);
+  ownerPhraseLock.checked = Boolean(value?.ownerPhraseLock);
+  ownerPhrase.value = value?.ownerPhrase || "";
+  if (value?.microphoneName) {
+    const exists = Array.from(microphoneSelect.options)
+      .some(option => option.value === value.microphoneName);
+    if (!exists) {
+      const option = document.createElement("option");
+      option.value = value.microphoneName;
+      option.textContent = `${value.microphoneName} (saved)`;
+      microphoneSelect.append(option);
+    }
+    microphoneSelect.value = value.microphoneName;
+  }
+  customVoiceNote.value = value?.customVoiceNote || "";
+  if (value?.outputVoiceName && voices.some(voice => voice.name === value.outputVoiceName)) {
+    voiceSelect.value = value.outputVoiceName;
+  }
+}
+
+function renderLocalComputeStatus(value) {
+  let status = value;
+  if (typeof value === "string") {
+    try { status = JSON.parse(value); }
+    catch { return; }
+  }
+  if (!status || typeof status !== "object") return;
+  document.querySelector("#preferLocalProvider").checked =
+    Boolean(status.prefer_local_provider);
+  const compute = status.local_compute || {};
+  if (Number.isFinite(Number(compute.local_ram_gb))) {
+    document.querySelector("#localRamGb").value = String(compute.local_ram_gb);
+  }
+  if (Number.isFinite(Number(compute.ollama_context_tokens))) {
+    document.querySelector("#ollamaContextTokens").value = String(compute.ollama_context_tokens);
+  }
+  if (Number.isFinite(Number(compute.ollama_gpu_layers))) {
+    document.querySelector("#ollamaGpuLayers").value = String(compute.ollama_gpu_layers);
+  }
+}
+
+function renderAutonomyStatus(value) {
+  if (!value || typeof value !== "object") return;
+  document.querySelector("#awayMode").checked = Boolean(value.awayMode);
+  document.querySelector("#autoLowRiskTasks").checked = Boolean(value.autoLowRiskTasks);
+  document.querySelector("#askBeforeDeepResearch").checked = Boolean(value.askBeforeDeepResearch);
+  document.querySelector("#phoneApprovalQueue").checked = Boolean(value.phoneApprovalQueue);
+  document.querySelector("#selfLearningSuggestions").checked = Boolean(value.selfLearningSuggestions);
+  document.querySelector("#selfImprovementProposals").checked = Boolean(value.selfImprovementProposals);
+  document.querySelector("#phoneBridgeNoToken").checked = Boolean(value.phoneBridgeNoToken);
+  document.querySelector("#prepareHighRiskWhileWaiting").checked = Boolean(value.prepareHighRiskWhileWaiting);
+  document.querySelector("#autonomyNotes").value = value.notes || "";
+  const until = value.fullControlUntil
+    ? new Date(value.fullControlUntil).toLocaleString()
+    : "off";
+  autonomyDetails.textContent = [
+    `Full Control: ${value.fullControlActive ? `active until ${until}` : "off"}`,
+    "",
+    JSON.stringify(value, null, 2)
+  ].join("\n");
+}
+
+function readAutonomyForm() {
+  return {
+    awayMode: document.querySelector("#awayMode").checked,
+    autoLowRiskTasks: document.querySelector("#autoLowRiskTasks").checked,
+    askBeforeDeepResearch: document.querySelector("#askBeforeDeepResearch").checked,
+    phoneApprovalQueue: document.querySelector("#phoneApprovalQueue").checked,
+    selfLearningSuggestions: document.querySelector("#selfLearningSuggestions").checked,
+    selfImprovementProposals: document.querySelector("#selfImprovementProposals").checked,
+    phoneBridgeNoToken: document.querySelector("#phoneBridgeNoToken").checked,
+    prepareHighRiskWhileWaiting: document.querySelector("#prepareHighRiskWhileWaiting").checked,
+    notes: document.querySelector("#autonomyNotes").value
+  };
+}
+
+function renderPhoneBridgeStatus(value) {
+  if (!value || typeof value !== "object") return;
+  phoneBridgeDetails.textContent = value.running
+    ? [
+      "Network bridge is running.",
+      `Network URL: ${value.url}`,
+      value.tokenRequired ? `Pairing token: ${value.token}` : "Pairing token: not required",
+      "",
+      value.note || "",
+      "Any trusted PC on this LAN: open the URL in Chrome or Edge.",
+      "Voice input: click Voice Input on that device and allow microphone permission.",
+      "Xfinity modem/router: carries the LAN traffic, but Blue runs on this Project Blue PC.",
+      "Devices can say No Thanks on the page; Blue will not install itself or control that device.",
+      "Android: open the URL in Chrome, then tap Install or Add to Home screen.",
+      "iPhone: open the URL in Safari, tap Share, then Add to Home Screen."
+    ].join("\n")
+    : "Network bridge is stopped.";
+}
+
+function showDeepResearchPrompt(value) {
+  pendingDeepResearchTopic = String(value?.topic || "").trim();
+  if (!pendingDeepResearchTopic) return;
+  deepResearchPromptDetails.textContent = [
+    `Topic: ${pendingDeepResearchTopic}`,
+    "",
+    "Blue can start a deeper internet research pass now. This may take a while and will save sources/notes to the Learning Queue."
+  ].join("\n");
+  deepResearchPrompt.hidden = false;
+}
+
+async function wakeListen() {
+  const button = document.querySelector("#wakeListen");
+  if (listening) {
+    try { await window.bluePet.cancelListening(); }
+    catch (error) { append("blue", `Could not stop listening: ${error.message}`); }
+    return;
+  }
+  listening = true;
+  button.textContent = "Stop Wake Listen";
+  button.classList.add("listening");
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  window.bluePet.setSpeaking(false);
+  try {
+    await window.bluePet.saveVoiceSettings(readVoiceSettingsForm());
+    const result = await window.bluePet.wakeListen();
+    if (!result.activated) {
+      append("blue", `Wake listen ignored: ${result.reason}`);
+      return;
+    }
+    const command = String(result.command || "").trim();
+    append("you", `[${result.wakeWord}] ${command || result.transcript}`);
+    if (result.reply) speak(result.reply);
+    if (command) {
+      await perform(() => window.bluePet.chat(command));
+    } else {
+      prompt.value = "";
+      prompt.focus();
+      append("blue", result.reply || "I heard the wake word. Tell me the command after it next time, or type it here.");
+    }
+  } catch (error) {
+    append("blue", `Wake listen did not complete: ${error.message}`);
+  } finally {
+    listening = false;
+    button.textContent = "Wake Listen";
+    button.classList.remove("listening");
+  }
+}
+
+async function enrollOwnerPhrase() {
+  const button = document.querySelector("#enrollOwnerPhrase");
+  if (listening) {
+    append("blue", "Stop the current listening session before enrolling an owner phrase.");
+    return;
+  }
+  listening = true;
+  button.textContent = "Listening...";
+  button.classList.add("listening");
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  try {
+    append("blue", "Say a private owner phrase now. This saves the phrase text, not a biometric voiceprint.");
+    const transcript = await window.bluePet.listenOnce();
+    const phrase = String(transcript || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (phrase.length < 4) throw new Error("That phrase was too short to use as a lock.");
+    ownerPhrase.value = phrase;
+    ownerPhraseLock.checked = true;
+    const saved = await window.bluePet.saveVoiceSettings(readVoiceSettingsForm());
+    renderVoiceSettings(saved);
+    append("blue", "Owner phrase lock is on. For now this checks the private phrase text; true speaker voiceprint learning is still a later model add-on.");
+  } catch (error) {
+    append("blue", `Owner phrase enrollment did not complete: ${error.message}`);
+  } finally {
+    listening = false;
+    button.textContent = "Enroll Owner Phrase";
+    button.classList.remove("listening");
+  }
+}
+
 async function sendPasted() {
   const content = pasteBox.value.trim();
   if (!content) return;
@@ -301,6 +767,17 @@ async function sendPasted() {
 
 document.querySelector("#send").onclick = send;
 document.querySelector("#listen").onclick = listenOnce;
+document.querySelector("#chatVoiceSkip").onclick = skipVoice;
+document.querySelector("#wakeListen").onclick = wakeListen;
+document.querySelector("#enrollOwnerPhrase").onclick = enrollOwnerPhrase;
+document.querySelector("#refreshMicrophones").onclick = loadMicrophones;
+document.querySelector("#openMicSettings").onclick = async () => {
+  try {
+    append("blue", await window.bluePet.openMicrophoneSettings());
+  } catch (error) {
+    append("blue", `Could not open microphone settings: ${error.message}`);
+  }
+};
 prompt.onkeydown = event => { if (event.key === "Enter") send(); };
 document.querySelector("#pasteSend").onclick = sendPasted;
 pasteBox.onkeydown = event => {
@@ -323,6 +800,27 @@ document.querySelector("#newConversation").onclick = async () => {
 document.querySelector("#newConversationName").onkeydown = event => {
   if (event.key === "Enter") document.querySelector("#newConversation").click();
 };
+document.querySelector("#deleteConversation").onclick = async () => {
+  const button = document.querySelector("#deleteConversation");
+  const id = conversationSelect.value;
+  const title = conversationSelect.selectedOptions[0]?.textContent || "this conversation";
+  if (!id || !confirm(`Delete "${title}" and its saved messages?\n\nLearned memories, research notes, sources, and artifacts will stay saved.`)) return;
+  button.disabled = true;
+  button.textContent = "Deleting...";
+  try {
+    const result = await window.bluePet.deleteConversation(id);
+    renderConversationList(result);
+    renderConversationHistory(result.history || "");
+    append("blue", `Deleted chat: ${result.deletedTitle || title}. Learned memories, research notes, sources, and artifacts were kept.`);
+    footerConversation.textContent = `Conversation: ${result.title || "Blue Desktop Pet"}`;
+    prompt.focus();
+  } catch (error) {
+    append("blue", `I could not delete that conversation: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Delete Chat";
+  }
+};
 conversationSelect.onchange = async () => {
   try {
     const result = await window.bluePet.selectConversation(conversationSelect.value);
@@ -333,8 +831,41 @@ conversationSelect.onchange = async () => {
   }
 };
 document.querySelector("#files").onclick = () => perform(window.bluePet.shareFiles);
-document.querySelector("#images").onclick = () => perform(window.bluePet.shareImages);
+document.querySelector("#images").onclick = () => perform(async () => {
+  const result = await window.bluePet.shareImages();
+  await loadOutfitReference();
+  return result;
+});
 document.querySelector("#folder").onclick = () => perform(window.bluePet.shareFolder);
+document.querySelector("#referenceStatus").onclick = loadOutfitReference;
+document.querySelector("#referenceUseLatest").onclick = async () => {
+  try {
+    renderOutfitReference(await window.bluePet.useLatestArtifactAsReference());
+  } catch (error) {
+    referenceSummary.textContent = `Could not set reference: ${error.message}`;
+  }
+};
+styleReferenceUseLatest.onclick = async () => {
+  try {
+    renderOutfitReference(await window.bluePet.useLatestArtifactAsOutfitStyleReference());
+  } catch (error) {
+    referenceSummary.textContent = `Could not set outfit/style reference: ${error.message}`;
+  }
+};
+document.querySelector("#referenceClear").onclick = async () => {
+  try {
+    renderOutfitReference(await window.bluePet.clearOutfitReference());
+  } catch (error) {
+    referenceSummary.textContent = `Could not clear reference: ${error.message}`;
+  }
+};
+styleReferenceClear.onclick = async () => {
+  try {
+    renderOutfitReference(await window.bluePet.clearOutfitStyleReference());
+  } catch (error) {
+    referenceSummary.textContent = `Could not clear outfit/style reference: ${error.message}`;
+  }
+};
 document.querySelector("#clipboard").onclick = async () => {
   try {
     pasteBox.value = await window.bluePet.readClipboard();
@@ -380,33 +911,76 @@ useOcr.onclick = () => {
   pasteBox.scrollIntoView({ block: "center" });
 };
 
-for (const eventName of ["dragenter", "dragover"]) {
-  dropZone.addEventListener(eventName, event => {
-    event.preventDefault();
-    dropZone.classList.add("active");
-  });
-}
-for (const eventName of ["dragleave", "drop"]) {
-  dropZone.addEventListener(eventName, event => {
-    event.preventDefault();
-    dropZone.classList.remove("active");
-  });
-}
-dropZone.addEventListener("drop", async event => {
+async function handleDroppedData(event) {
   const files = Array.from(event.dataTransfer.files);
   if (files.length) {
     const paths = files.map(file => window.bluePet.pathForFile(file)).filter(Boolean);
-    if (paths.length) await perform(() => window.bluePet.sharePaths(paths));
+    if (paths.length) {
+      append("you", `[dropped ${paths.length} item${paths.length === 1 ? "" : "s"}]\n${paths.join("\n")}`);
+      await perform(async () => {
+        const result = await window.bluePet.sharePaths(paths);
+        await loadCurrentArtifact();
+        await loadOutfitReference();
+        return result;
+      });
+    }
     return;
   }
   const content = event.dataTransfer.getData("text/plain");
   if (content) {
-    pasteBox.value = content;
-    await sendPasted();
+    append("you", `[dropped text]\n${content}`);
+    await perform(() => window.bluePet.pasteContent(content));
   }
-});
+}
+
+function enableDropTarget(element, activeClass) {
+  for (const eventName of ["dragenter", "dragover"]) {
+    element.addEventListener(eventName, event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      element.classList.add(activeClass);
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    element.addEventListener(eventName, event => {
+      event.preventDefault();
+      element.classList.remove(activeClass);
+    });
+  }
+  element.addEventListener("drop", handleDroppedData);
+}
+
+enableDropTarget(dropZone, "active");
+enableDropTarget(messages, "active-drop");
 
 document.querySelector("#showPet").onclick = window.bluePet.showPet;
+document.querySelector("#refreshVtuberModels").onclick = () => loadVtuberModels(false);
+document.querySelector("#applyVtuberModel").onclick = async () => {
+  try {
+    const selected = await window.bluePet.selectVtuberModel(vtuberModelSelect.value);
+    await loadVtuberModels(false);
+    append("blue", `Switched VTuber model to ${selected.name}.`);
+  } catch (error) {
+    append("blue", `I could not switch models: ${error.message}`);
+  }
+};
+document.querySelector("#startupModelUse").onclick = async () => {
+  try {
+    const selected = await window.bluePet.selectVtuberModel(selectedStartupModel || vtuberModelSelect.value);
+    modelPickerOverlay.hidden = true;
+    await loadVtuberModels(false);
+    append("blue", `Using ${selected.name}.`);
+  } catch (error) {
+    append("blue", `I could not select that model: ${error.message}`);
+  }
+};
+document.querySelector("#startupModelKeep").onclick = () => {
+  modelPickerOverlay.hidden = true;
+};
+document.querySelector("#ollamaDownload").onclick = () => answerOllamaSetup("accepted");
+document.querySelector("#ollamaInstalled").onclick = () => answerOllamaSetup("installed");
+document.querySelector("#ollamaLater").onclick = () => answerOllamaSetup("later");
+document.querySelector("#ollamaSkip").onclick = () => answerOllamaSetup("skipped");
 for (const button of document.querySelectorAll("[data-action]")) {
   button.onclick = () => window.bluePet.triggerAction(button.dataset.action);
 }
@@ -494,16 +1068,203 @@ document.querySelector("#auditEvents").onclick = async () => {
   catch (error) { document.querySelector("#status").textContent = error.message; }
 };
 document.querySelector("#openProject").onclick = () => perform(window.bluePet.openProject, false);
+document.querySelector("#pcActionGuidelines").onclick = async () => {
+  try { document.querySelector("#status").textContent = await window.bluePet.pcActionGuidelines(); }
+  catch (error) { document.querySelector("#status").textContent = error.message; }
+};
+document.querySelector("#pcActionRun").onclick = async () => {
+  const status = document.querySelector("#status");
+  try {
+    status.textContent = await window.bluePet.pcActionRun({
+      action: document.querySelector("#pcActionType").value,
+      target: document.querySelector("#pcActionTarget").value,
+      content: document.querySelector("#pcActionContent").value,
+      approved: document.querySelector("#pcActionApprove").checked,
+      allowTaskWithoutApprovals: document.querySelector("#pcActionNoMoreApprovals").checked
+    });
+    document.querySelector("#pcActionApprove").checked = false;
+    await loadCurrentArtifact();
+  } catch (error) {
+    status.textContent = `PC action blocked: ${error.message}`;
+  }
+};
+document.querySelector("#saveAutonomy").onclick = async () => {
+  try {
+    renderAutonomyStatus(await window.bluePet.saveAutonomy(readAutonomyForm()));
+  } catch (error) {
+    autonomyDetails.textContent = `Could not save away rules: ${error.message}`;
+  }
+};
+document.querySelector("#fullControlGrant").onclick = async () => {
+  const minutes = Number(document.querySelector("#fullControlMinutes").value || 60);
+  if (!confirm("Grant Blue a timed Full Control session for allowed local tasks? High-risk actions will still be queued for approval.")) return;
+  try {
+    renderAutonomyStatus(await window.bluePet.grantFullControl(minutes));
+  } catch (error) {
+    autonomyDetails.textContent = `Could not grant Full Control: ${error.message}`;
+  }
+};
+document.querySelector("#fullControlRevoke").onclick = async () => {
+  try {
+    renderAutonomyStatus(await window.bluePet.revokeFullControl());
+  } catch (error) {
+    autonomyDetails.textContent = `Could not revoke Full Control: ${error.message}`;
+  }
+};
+document.querySelector("#phoneBridgeStarter").onclick = async () => {
+  try {
+    document.querySelector("#status").textContent = await window.bluePet.createPhoneBridgeStarter();
+    await loadCurrentArtifact();
+  } catch (error) {
+    document.querySelector("#status").textContent = `Could not create phone bridge starter: ${error.message}`;
+  }
+};
+document.querySelector("#phoneApprovalQueueShow").onclick = async () => {
+  try {
+    autonomyDetails.textContent = await window.bluePet.phoneApprovalQueue();
+  } catch (error) {
+    autonomyDetails.textContent = `Could not load phone approval queue: ${error.message}`;
+  }
+};
+document.querySelector("#phoneBridgeStart").onclick = async () => {
+  try {
+    renderPhoneBridgeStatus(await window.bluePet.startPhoneBridge());
+  } catch (error) {
+    phoneBridgeDetails.textContent = `Could not start phone bridge: ${error.message}`;
+  }
+};
+document.querySelector("#phoneBridgeStop").onclick = async () => {
+  try {
+    renderPhoneBridgeStatus(await window.bluePet.stopPhoneBridge());
+  } catch (error) {
+    phoneBridgeDetails.textContent = `Could not stop phone bridge: ${error.message}`;
+  }
+};
+document.querySelector("#deepResearchStart").onclick = async () => {
+  if (!pendingDeepResearchTopic) return;
+  const topic = pendingDeepResearchTopic;
+  pendingDeepResearchTopic = "";
+  deepResearchPrompt.hidden = true;
+  append("blue", `Starting deep search for: ${topic}`);
+  const result = await perform(() => window.bluePet.learningResearch({ topic }), false);
+  if (result) append("blue", "Deep search is done and saved in the Learning Queue.");
+};
+document.querySelector("#deepResearchLater").onclick = () => {
+  pendingDeepResearchTopic = "";
+  deepResearchPrompt.hidden = true;
+  append("blue", "Okay. I saved the learning request and did not start deep search yet.");
+};
+document.querySelector("#artifactRefresh").onclick = loadCurrentArtifact;
+document.querySelector("#artifactOpen").onclick = async () => {
+  const status = document.querySelector("#status");
+  try {
+    status.textContent = await window.bluePet.openArtifact();
+    await loadCurrentArtifact();
+  } catch (error) {
+    status.textContent = `Could not open latest result: ${error.message}`;
+  }
+};
+document.querySelector("#artifactReveal").onclick = async () => {
+  const status = document.querySelector("#status");
+  try {
+    status.textContent = await window.bluePet.revealArtifact();
+  } catch (error) {
+    status.textContent = `Could not show latest result: ${error.message}`;
+  }
+};
 document.querySelector("#providerStatus").onclick = () =>
-  perform(window.bluePet.providerStatus, false);
+  perform(async () => {
+    const status = await window.bluePet.providerStatus();
+    renderLocalComputeStatus(status);
+    return status;
+  }, false);
 document.querySelector("#connectModel").onclick = () =>
   perform(window.bluePet.connectLocalModel, false);
+document.querySelector("#saveLocalCompute").onclick = () =>
+  perform(async () => {
+    const status = await window.bluePet.saveLocalCompute({
+      preferLocalProvider: document.querySelector("#preferLocalProvider").checked,
+      localRamGb: Number(document.querySelector("#localRamGb").value || 8),
+      ollamaContextTokens: Number(document.querySelector("#ollamaContextTokens").value || 4096),
+      ollamaGpuLayers: Number(document.querySelector("#ollamaGpuLayers").value ?? -1)
+    });
+    renderLocalComputeStatus(status);
+    return status;
+  }, false);
+for (const button of document.querySelectorAll("[data-ram-preset]")) {
+  button.onclick = () => {
+    const ram = Number(button.dataset.ramPreset || 8);
+    document.querySelector("#localRamGb").value = String(ram);
+    const context = ram >= 64 ? 32768 : ram >= 32 ? 16384 : ram >= 16 ? 8192 : 4096;
+    document.querySelector("#ollamaContextTokens").value = String(context);
+    append("blue", `Local thinking budget set to ${ram} GB with ${context} context tokens. Click Save Local Compute Settings to apply it.`);
+  };
+}
 document.querySelector("#loadHistory").onclick = () =>
   perform(window.bluePet.conversationHistory, false);
 document.querySelector("#capabilities").onclick = () =>
   perform(window.bluePet.capabilities, false);
 document.querySelector("#researchCatalog").onclick = () =>
   perform(window.bluePet.researchCatalog, false);
+document.querySelector("#learningList").onclick = async () => {
+  try {
+    document.querySelector("#learningDetails").textContent = await window.bluePet.learningRecords();
+  } catch (error) {
+    document.querySelector("#learningDetails").textContent = error.message;
+  }
+};
+document.querySelector("#learningSave").onclick = async () => {
+  const topic = document.querySelector("#learningTopic");
+  const notes = document.querySelector("#learningNotes");
+  try {
+    document.querySelector("#learningDetails").textContent = await window.bluePet.learningCapture({
+      topic: topic.value,
+      notes: notes.value
+    });
+    topic.value = "";
+    notes.value = "";
+  } catch (error) {
+    document.querySelector("#learningDetails").textContent = `Learning request not saved: ${error.message}`;
+  }
+};
+document.querySelector("#learningResearch").onclick = async () => {
+  const topic = document.querySelector("#learningTopic");
+  try {
+    document.querySelector("#learningDetails").textContent = "Researching online...";
+    document.querySelector("#learningDetails").textContent = await window.bluePet.learningResearch({
+      topic: topic.value
+    });
+  } catch (error) {
+    document.querySelector("#learningDetails").textContent = `Online research failed: ${error.message}`;
+  }
+};
+document.querySelector("#agentStatus").onclick = async () => {
+  try {
+    document.querySelector("#agentDetails").textContent = await window.bluePet.agentStatus();
+  } catch (error) {
+    document.querySelector("#agentDetails").textContent = `Agent status unavailable: ${error.message}`;
+  }
+};
+document.querySelector("#agentStart").onclick = async () => {
+  const goal = document.querySelector("#agentGoal");
+  try {
+    document.querySelector("#agentDetails").textContent = "Creating agent plan...";
+    document.querySelector("#agentDetails").textContent = await window.bluePet.agentStart({
+      goal: goal.value
+    });
+    goal.value = "";
+  } catch (error) {
+    document.querySelector("#agentDetails").textContent = `Agent plan not created: ${error.message}`;
+  }
+};
+document.querySelector("#agentMiniMax").onclick = async () => {
+  try {
+    document.querySelector("#agentDetails").textContent = "Choosing next MiniMax step...";
+    document.querySelector("#agentDetails").textContent = await window.bluePet.agentMiniMax();
+  } catch (error) {
+    document.querySelector("#agentDetails").textContent = `MiniMax step failed: ${error.message}`;
+  }
+};
 document.querySelector("#captureIdea").onclick = async () => {
   const title = document.querySelector("#labTitle");
   const kind = document.querySelector("#labKind");
@@ -673,6 +1434,7 @@ document.querySelector("#discordConnect").onclick = () =>
 document.querySelector("#discordDisconnect").onclick = () =>
   discordAction(window.bluePet.disconnectDiscord, true);
 window.bluePet.onDiscordStatus(showDiscordStatus);
+window.bluePet.onModelChanged(() => loadVtuberModels(false));
 
 function boolLabel(value) {
   return ["true", "1"].includes(String(value).toLowerCase()) ? "On" : "Off";
@@ -758,24 +1520,53 @@ document.querySelector("#securityScan").onclick = async () => {
 };
 
 const voiceToggle = document.querySelector("#voiceToggle");
+const chatVoiceToggle = document.querySelector("#chatVoiceToggle");
 function refreshVoiceButton() {
-  voiceToggle.textContent = `Voice: ${voiceEnabled ? "On" : "Off"}`;
+  const label = `Voice: ${voiceEnabled ? "On" : "Off"}`;
+  voiceToggle.textContent = label;
+  chatVoiceToggle.textContent = label;
 }
-voiceToggle.onclick = () => {
+function toggleVoice() {
   voiceEnabled = !voiceEnabled;
   localStorage.setItem("blueVoiceEnabled", String(voiceEnabled));
-  if (!voiceEnabled) speechSynthesis.cancel();
-  if (!voiceEnabled) window.bluePet.setSpeaking(false);
+  if (!voiceEnabled) skipVoice();
   refreshVoiceButton();
-};
+}
+voiceToggle.onclick = toggleVoice;
+chatVoiceToggle.onclick = toggleVoice;
+document.querySelector("#voiceSkip").onclick = skipVoice;
 document.querySelector("#voiceTest").onclick = () =>
-  speak("Hello. I am Blue. My local voice is active.");
+  speak("Hello. I am Blue. My cleaner voice is active. **Markdown** and file paths like C:\\test\\file.txt are skipped when I speak.");
 voiceSelect.onchange = () => localStorage.setItem("blueVoiceName", voiceSelect.value);
+for (const control of [voiceRate, voicePitch, voiceVolume]) {
+  control.oninput = saveVoiceTuning;
+}
+document.querySelector("#saveVoiceSettings").onclick = async () => {
+  try {
+    saveVoiceTuning();
+    const saved = await window.bluePet.saveVoiceSettings(readVoiceSettingsForm());
+    renderVoiceSettings(saved);
+    localStorage.setItem("blueVoiceName", voiceSelect.value);
+    append("blue", "Voice activation and voice tuning settings saved.");
+  } catch (error) {
+    append("blue", `Could not save voice settings: ${error.message}`);
+  }
+};
 speechSynthesis.onvoiceschanged = loadVoices;
+loadVoiceTuning();
 loadVoices();
+loadMicrophones().then(() => window.bluePet.voiceSettings().then(renderVoiceSettings).catch(() => {}));
 refreshVoiceButton();
 window.bluePet.presenceStatus().then(renderPresence)
   .catch(error => { presenceDetails.textContent = error.message; });
+window.bluePet.providerStatus().then(renderLocalComputeStatus).catch(() => {});
+window.bluePet.autonomyStatus().then(renderAutonomyStatus).catch(error => {
+  autonomyDetails.textContent = `Away rules unavailable: ${error.message}`;
+});
+window.bluePet.phoneBridgeStatus().then(renderPhoneBridgeStatus).catch(() => {});
+window.bluePet.onDeepResearchPrompt(showDeepResearchPrompt);
+loadCurrentArtifact();
+loadOutfitReference();
 window.bluePet.ensureSession()
   .then(refreshConversations)
   .catch(error => append("blue", error.message));
@@ -783,4 +1574,6 @@ window.bluePet.discordConfig().then(fillDiscordConfig)
   .catch(error => { discordStatus.textContent = error.message; });
 window.bluePet.discordStatus().then(showDiscordStatus)
   .catch(error => { discordStatus.textContent = error.message; });
+loadVtuberModels(true);
+showOllamaSetupIfNeeded();
 refreshExpansion();

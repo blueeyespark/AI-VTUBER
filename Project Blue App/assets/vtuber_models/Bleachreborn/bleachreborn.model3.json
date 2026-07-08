@@ -1,0 +1,32 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "bleachreborn.moc3",
+		"Textures": [
+			"bleachreborn.8192/texture_00.png"
+		],
+		"Physics": "bleachreborn.physics3.json",
+		"DisplayInfo": "bleachreborn.cdi3.json",
+		"Expressions": [
+			{ "Name": "Chair", "File": "Chair.exp3.json" },
+			{ "Name": "Disappointed", "File": "Disappointed.exp3.json" },
+			{ "Name": "Happy", "File": "Happy.exp3.json" },
+			{ "Name": "Outfit 2", "File": "Outfit 2.exp3.json" },
+			{ "Name": "Sad", "File": "Sad.exp3.json" }
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen"
+			]
+		}
+	]
+}

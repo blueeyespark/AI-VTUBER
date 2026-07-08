@@ -23,7 +23,7 @@ from typing import Any
 from project_blue.config import BlueConfig, load_config, save_config
 from project_blue.constitution import Constitution
 from project_blue.policy import Decision, PolicyEngine, PolicyResult
-from project_blue.providers import OfflineProvider, OllamaProvider, Provider
+from project_blue.providers import OfflineProvider, OllamaProvider, OpenAIProvider, Provider
 from project_blue.storage import BlueStorage, utc_now
 from project_blue.windows_security import protect, unprotect
 
@@ -128,8 +128,24 @@ class BlueCore:
     def provider(self) -> Provider:
         if self.config.provider == "offline":
             return OfflineProvider()
+        if self.config.prefer_local_provider and self.config.provider == "openai":
+            status = self.provider_status_for("ollama")
+            if status.get("available"):
+                return OllamaProvider(
+                    self.config.model,
+                    self.config.ollama_url,
+                    self.config.ollama_context_tokens,
+                    self.config.ollama_gpu_layers,
+                )
         if self.config.provider == "ollama":
-            return OllamaProvider(self.config.model, self.config.ollama_url)
+            return OllamaProvider(
+                self.config.model,
+                self.config.ollama_url,
+                self.config.ollama_context_tokens,
+                self.config.ollama_gpu_layers,
+            )
+        if self.config.provider == "openai":
+            return OpenAIProvider(self.config.openai_model)
         raise RuntimeError(f"Unsupported provider: {self.config.provider}")
 
     def _chat_context(self, prompt: str) -> list[dict[str, Any]]:
@@ -1626,6 +1642,20 @@ class BlueCore:
         )
         return conversation_id
 
+    def delete_conversation(self, conversation_identifier: str) -> dict[str, Any]:
+        self.ensure_initialized()
+        conversation = self.storage.delete_conversation(conversation_identifier)
+        if conversation is None:
+            raise ValueError(f"Conversation not found: {conversation_identifier}")
+        self.storage.append_audit(
+            actor="creator",
+            action="conversation.delete",
+            target=conversation["id"],
+            result="success",
+            details={"title": conversation["title"]},
+        )
+        return conversation
+
     def activate_session(self, title: str = "Active Blue Session") -> dict[str, Any]:
         """Open or resume a named, persistent, policy-governed Blue session."""
         self.ensure_initialized()
@@ -2435,7 +2465,13 @@ class BlueCore:
             "constitution_version": self.constitution.version,
             "constitution_match": stored_fingerprint == self.constitution.fingerprint,
             "provider": self.config.provider,
-            "model": self.config.model if self.config.provider == "ollama" else None,
+            "model": (
+                self.config.model
+                if self.config.provider == "ollama"
+                else self.config.openai_model
+                if self.config.provider == "openai"
+                else None
+            ),
             "audit_chain_ok": chain_ok,
             "audit_message": chain_message,
             "projects": len(self.storage.list_projects()),
@@ -2468,11 +2504,36 @@ class BlueCore:
         }
 
     def provider_status(self) -> dict[str, Any]:
-        if self.config.provider == "offline":
+        status = self.provider_status_for(self.config.provider)
+        status["prefer_local_provider"] = self.config.prefer_local_provider
+        status["local_compute"] = {
+            "local_ram_gb": self.config.local_ram_gb,
+            "ollama_context_tokens": self.config.ollama_context_tokens,
+            "ollama_gpu_layers": self.config.ollama_gpu_layers,
+        }
+        if self.config.provider == "openai" and self.config.prefer_local_provider:
+            local = self.provider_status_for("ollama")
+            status["local_first_available"] = local.get("available", False)
+            status["local_first_detail"] = local.get("detail", "")
+        return status
+
+    def provider_status_for(self, provider: str) -> dict[str, Any]:
+        if provider == "offline":
             return {
                 "provider": "offline",
                 "available": True,
                 "detail": "Offline foundation mode is available.",
+            }
+        if provider == "openai":
+            return {
+                "provider": "openai",
+                "available": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+                "configured_model": self.config.openai_model,
+                "detail": (
+                    "OPENAI_API_KEY is set; OpenAI chat is ready."
+                    if os.environ.get("OPENAI_API_KEY", "").strip()
+                    else "OPENAI_API_KEY is not set in the current environment."
+                ),
             }
         request = urllib.request.Request(
             f"{self.config.ollama_url.rstrip('/')}/api/tags", method="GET"
@@ -2537,19 +2598,61 @@ class BlueCore:
             "next_step": "Local Ollama is ready for Blue chat.",
         }
 
+    def configure_openai_model(self, model: str | None = None) -> dict[str, Any]:
+        if model is not None:
+            if not model.strip():
+                raise ValueError("OpenAI model cannot be empty.")
+            self.config.openai_model = model.strip()
+        self.config.provider = "openai"
+        save_config(self.home, self.config)
+        status = self.provider_status()
+        return {
+            **status,
+            "configured": True,
+            "next_step": (
+                "Set OPENAI_API_KEY in your environment, then chat with Blue."
+                if not status["available"]
+                else "OpenAI is ready for Blue chat."
+            ),
+        }
+
     def update_config(self, key: str, value: str) -> None:
         if key == "provider":
-            if value not in {"offline", "ollama"}:
-                raise ValueError("Provider must be 'offline' or 'ollama'.")
+            if value not in {"offline", "ollama", "openai"}:
+                raise ValueError("Provider must be 'offline', 'ollama', or 'openai'.")
             self.config.provider = value
         elif key == "model":
             if not value.strip():
                 raise ValueError("Model cannot be empty.")
             self.config.model = value.strip()
+        elif key == "openai_model":
+            if not value.strip():
+                raise ValueError("OpenAI model cannot be empty.")
+            self.config.openai_model = value.strip()
         elif key == "ollama_url":
             if not value.startswith(("http://127.0.0.1", "http://localhost")):
                 raise ValueError("Phase 1 only permits a local Ollama URL.")
             self.config.ollama_url = value.rstrip("/")
+        elif key == "prefer_local_provider":
+            normalized = value.strip().lower()
+            if normalized not in {"true", "false", "yes", "no", "1", "0"}:
+                raise ValueError("prefer_local_provider must be true or false.")
+            self.config.prefer_local_provider = normalized in {"true", "yes", "1"}
+        elif key == "local_ram_gb":
+            amount = int(value)
+            if amount < 1 or amount > 256:
+                raise ValueError("local_ram_gb must be between 1 and 256.")
+            self.config.local_ram_gb = amount
+        elif key == "ollama_context_tokens":
+            amount = int(value)
+            if amount < 1024 or amount > 32768:
+                raise ValueError("ollama_context_tokens must be between 1024 and 32768.")
+            self.config.ollama_context_tokens = amount
+        elif key == "ollama_gpu_layers":
+            amount = int(value)
+            if amount < -1 or amount > 999:
+                raise ValueError("ollama_gpu_layers must be -1 for auto or between 0 and 999.")
+            self.config.ollama_gpu_layers = amount
         elif key == "save_conversations":
             normalized = value.strip().lower()
             if normalized not in {"true", "false", "yes", "no", "1", "0"}:

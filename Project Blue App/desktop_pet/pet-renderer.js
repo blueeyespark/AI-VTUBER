@@ -8,6 +8,8 @@ import {
 } from "./motion-core.mjs";
 
 const canvas = document.querySelector("#body");
+const live2DCanvas = document.querySelector("#live2dBody");
+const petBubble = document.querySelector("#petBubble");
 const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -19,11 +21,19 @@ key.position.set(1, 2, 3);
 scene.add(key);
 
 let vrm;
+let twoDModel;
+let live2DModel;
+let live2DApp;
+let live2DBaseScale = 1;
+let live2DExpression = "";
+let live2DAnimations = { expressions: [], motions: [] };
+let live2DSize = { width: 0, height: 0 };
+let live2DRuntimePromise;
 let modelBounds;
 let elapsed = 0;
 let reactionUntil = 0;
-let wandering = true;
-let walking = true;
+let wandering = false;
+let walking = false;
 let walkWeight = 0;
 let runWeight = 0;
 let gaitPhase = 0;
@@ -43,6 +53,42 @@ let bond = Number(localStorage.getItem("blueBond") || 0);
 const softBones = [];
 const motionBones = {};
 document.querySelector("#mood").textContent = `Bond ${bond}`;
+let bubbleTimer;
+
+function showBubble(message, durationMs = 5200) {
+  const text = String(message || "").replace(/\s+/g, " ").trim().slice(0, 180);
+  if (!text) return;
+  petBubble.textContent = text;
+  petBubble.hidden = false;
+  clearTimeout(bubbleTimer);
+  bubbleTimer = setTimeout(() => {
+    petBubble.hidden = true;
+  }, Math.max(1200, Math.min(Number(durationMs) || 5200, 12000)));
+}
+
+function clearModelState() {
+  if (vrm?.scene) scene.remove(vrm.scene);
+  if (twoDModel?.group) scene.remove(twoDModel.group);
+  if (live2DModel) {
+    live2DModel.destroy({ children: true, texture: false, baseTexture: false });
+  }
+  if (live2DApp) {
+    live2DApp.destroy(false, { children: true, texture: false, baseTexture: false });
+  }
+  vrm = null;
+  twoDModel = null;
+  live2DModel = null;
+  live2DApp = null;
+  live2DBaseScale = 1;
+  live2DExpression = "";
+  live2DAnimations = { expressions: [], motions: [] };
+  live2DSize = { width: 0, height: 0 };
+  modelBounds = null;
+  canvas.hidden = false;
+  live2DCanvas.hidden = true;
+  softBones.length = 0;
+  for (const key of Object.keys(motionBones)) delete motionBones[key];
+}
 
 function fitCamera() {
   if (!modelBounds) return;
@@ -63,7 +109,169 @@ function fitCamera() {
 
 const loader = new GLTFLoader();
 loader.register(parser => new VRMLoaderPlugin(parser));
-loader.load("../assets/blue_identity.vrm", gltf => {
+
+async function loadSelectedModel(model) {
+  clearModelState();
+  const selected = model || await window.bluePet.currentVtuberModel();
+  document.querySelector("#handle").firstChild.textContent =
+    `${selected.name || "BLUE"} `;
+  document.querySelector("#mood").textContent =
+    `Bond ${bond} - loading ${selected.type === "2d" ? "2D" : "3D"}`;
+  if (selected.type === "2d") {
+    if (selected.format === "live2d") {
+      loadLive2DModel(selected).catch(error => {
+        document.querySelector("#mood").textContent = `Live2D load error: ${error.message}`;
+      });
+    } else {
+      load2DModel(selected);
+    }
+  } else {
+    loadVRMModel(selected);
+  }
+}
+
+function loadScriptOnce(src, globalCheck) {
+  if (globalCheck()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-blue-src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.dataset.blueSrc = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+function ensureLive2DRuntime() {
+  if (!live2DRuntimePromise) {
+    live2DRuntimePromise = loadScriptOnce(
+      "./vendor/live2dcubismcore.min.js",
+      () => Boolean(window.Live2DCubismCore)
+    )
+      .then(() => loadScriptOnce(
+        "./node_modules/pixi.js/dist/browser/pixi.min.js",
+        () => Boolean(window.PIXI)
+      ))
+      .then(() => {
+        window.PIXI = window.PIXI;
+        return loadScriptOnce(
+          "./node_modules/pixi-live2d-display/dist/cubism4.min.js",
+          () => Boolean(window.PIXI?.live2d?.Live2DModel)
+        );
+      });
+  }
+  return live2DRuntimePromise;
+}
+
+function fitLive2DModel() {
+  if (!live2DApp || !live2DModel) return;
+  const width = Math.max(live2DCanvas.clientWidth, 1);
+  const height = Math.max(live2DCanvas.clientHeight, 1);
+  live2DSize = { width, height };
+  live2DApp.renderer.resize(width, height);
+  live2DModel.anchor?.set(0.5, 0.5);
+  const modelWidth = Math.max(live2DModel.internalModel?.width || live2DModel.width || 1, 1);
+  const modelHeight = Math.max(live2DModel.internalModel?.height || live2DModel.height || 1, 1);
+  live2DBaseScale = Math.min(width / modelWidth, height / modelHeight) * 0.92;
+  live2DModel.position.set(width * 0.5, height * 0.52);
+  live2DModel.scale.set(live2DBaseScale);
+}
+
+function availableLive2DExpression(name) {
+  return live2DAnimations.expressions.find(
+    expression => expression.toLowerCase() === name.toLowerCase()
+  );
+}
+
+function expressionForAction(name) {
+  const wanted = {
+    smile: ["Happy"],
+    cheer: ["Happy"],
+    dance: ["Happy"],
+    lean: ["Disappointed", "Sad"],
+    look: ["Disappointed"],
+    nod: ["Happy"],
+    edge: ["Disappointed", "Sad"],
+    sad: ["Sad"],
+    chair: ["Chair"],
+    outfit: ["Outfit 2", "Outfit", "Costume", "Clothes"]
+  }[name] || [];
+  return wanted.map(availableLive2DExpression).find(Boolean) || "";
+}
+
+function live2DIdleActions() {
+  return [
+    availableLive2DExpression("Happy") ? "smile" : "",
+    availableLive2DExpression("Disappointed") || availableLive2DExpression("Sad") ? "look" : "",
+    availableLive2DExpression("Outfit 2") || availableLive2DExpression("Outfit") ? "outfit" : ""
+  ].filter(Boolean);
+}
+
+async function loadLive2DModel(model) {
+  canvas.hidden = true;
+  live2DCanvas.hidden = false;
+  await ensureLive2DRuntime();
+  if (!live2DApp) {
+    live2DApp = new window.PIXI.Application({
+      view: live2DCanvas,
+      autoStart: true,
+      backgroundAlpha: 0,
+      antialias: true,
+      resolution: Math.min(devicePixelRatio, 2)
+    });
+  }
+  live2DModel = await window.PIXI.live2d.Live2DModel.from(model.path, {
+    autoInteract: false
+  });
+  live2DAnimations = {
+    expressions: Array.isArray(model.animations?.expressions)
+      ? model.animations.expressions
+      : [],
+    motions: Array.isArray(model.animations?.motions)
+      ? model.animations.motions
+      : []
+  };
+  live2DModel.anchor?.set(0.5, 0.5);
+  live2DApp.stage.addChild(live2DModel);
+  fitLive2DModel();
+  document.querySelector("#mood").textContent =
+    `Bond ${bond} - ${model.name} Live2D ready`;
+}
+
+function load2DModel(model) {
+  new THREE.TextureLoader().load(model.path, texture => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const aspect = texture.image.width / Math.max(texture.image.height, 1);
+    const height = 2.6;
+    const width = height * aspect;
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: 0.02,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+    const group = new THREE.Group();
+    group.add(mesh);
+    scene.add(group);
+    twoDModel = { group, mesh, material, baseScale: 1 };
+    modelBounds = new THREE.Box3().setFromObject(group);
+    fitCamera();
+    document.querySelector("#mood").textContent =
+      `Bond ${bond} - ${model.name} ready`;
+  }, undefined, error => {
+    document.querySelector("#mood").textContent = `2D model load error: ${error.message}`;
+  });
+}
+
+function loadVRMModel(model) {
+  loader.load(model.path || "../assets/blue_identity.vrm", gltf => {
   vrm = gltf.userData.vrm;
   VRMUtils.rotateVRM0(vrm);
   scene.add(vrm.scene);
@@ -121,9 +329,12 @@ loader.load("../assets/blue_identity.vrm", gltf => {
   vrm.scene.updateMatrixWorld(true);
   modelBounds = new THREE.Box3().setFromObject(vrm.scene);
   fitCamera();
+  document.querySelector("#mood").textContent =
+    `Bond ${bond} - ${model.name || "Blue 3D"} ready`;
 }, undefined, error => {
   document.querySelector("#mood").textContent = `Body load error: ${error.message}`;
-});
+  });
+}
 
 const clock = new THREE.Clock();
 function springStep(position, velocity, target, delta, frequency = 2.5, damping = 0.85) {
@@ -140,7 +351,8 @@ function springStep(position, velocity, target, delta, frequency = 2.5, damping 
 function triggerAction(name, duration = 2.4) {
   const durations = {
     wave: 2.6, smile: 2.8, look: 2.8, lean: 2.2,
-    stretch: 3.2, dance: 4.5, edge: 1.2, nod: 1.8, cheer: 3.1
+    stretch: 3.2, dance: 4.5, edge: 1.2, nod: 1.8, cheer: 3.1,
+    outfit: 4.5, chair: 4.5, sad: 3.0
   };
   if (!Object.hasOwn(durations, name)) return;
   if (action && name !== "edge") {
@@ -350,15 +562,99 @@ function frame() {
       speaking ? 0.2 + Math.abs(Math.sin(elapsed * 11.5)) * 0.35 : 0
     );
   }
+  if (twoDModel) {
+    const gait = gaitProfile(motion.speed, motion.mode);
+    const movingTarget = walking ? gait.weight : 0;
+    walkWeight += (movingTarget - walkWeight) * (1 - Math.exp(-delta * 7.0));
+    gaitPhase += delta * gait.cadence * Math.max(walkWeight, 0.08);
+    const cycle = Math.sin(gaitPhase);
+    const yawTarget = facingYawForDirection(motion.x, walking, bodyYaw);
+    const yawSpring = springStep(bodyYaw, bodyYawVelocity, yawTarget, delta, 2.0, 0.9);
+    bodyYaw = yawSpring.position;
+    bodyYawVelocity = yawSpring.velocity;
+    const actionPulse = action
+      ? Math.sin(Math.PI * Math.max(0, Math.min(1, (elapsed - action.start) / (action.end - action.start))))
+      : 0;
+    if (action && elapsed >= action.end) {
+      action = null;
+      const queued = actionQueue.shift();
+      if (queued) triggerAction(queued);
+    }
+    const speechPulse = speaking ? Math.abs(Math.sin(elapsed * 11.5)) * 0.055 : 0;
+    const bounce = Math.sin(elapsed * 1.4) * 0.035
+      + Math.max(0, Math.sin(gaitPhase * 2)) * gait.bounce * 1.8 * walkWeight
+      + (action?.name === "cheer" || action?.name === "dance" ? actionPulse * 0.08 : 0);
+    const tilt = cycle * 0.08 * walkWeight
+      + pointer.x * 0.06
+      + (action?.name === "lean" ? actionPulse * 0.18 : 0)
+      + (action?.name === "dance" ? Math.sin(elapsed * 8) * 0.18 * actionPulse : 0);
+    const wave = action?.name === "wave" ? Math.sin(elapsed * 16) * 0.035 * actionPulse : 0;
+    twoDModel.group.position.set(0, bounce, 0);
+    twoDModel.group.rotation.set(pointer.y * 0.03, bodyYaw * 0.18, tilt + wave);
+    const scale = 1 + speechPulse + (action?.name === "smile" ? actionPulse * 0.035 : 0);
+    twoDModel.group.scale.set(scale, scale, scale);
+    const idleDue = !action && proactivity !== "off" && elapsed >= nextIdleAction;
+    if (idleDue) {
+      const options = proactivity === "social"
+        ? ["look", "wave", "smile", "lean", "nod", "cheer"]
+        : ["look", "wave", "smile", "lean", "nod"];
+      triggerAction(options[Math.floor(Math.random() * options.length)]);
+      scheduleNextIdleAction();
+    }
+  }
+  if (live2DModel) {
+    if (action && elapsed >= action.end) {
+      action = null;
+      const queued = actionQueue.shift();
+      if (queued) triggerAction(queued);
+    }
+    const speechPulse = speaking ? Math.abs(Math.sin(elapsed * 11.5)) : 0;
+    const centerX = live2DApp.renderer.width * 0.5;
+    const centerY = live2DApp.renderer.height * 0.52;
+    live2DModel.position.set(centerX, centerY);
+    live2DModel.rotation = 0;
+    live2DModel.scale.set(live2DBaseScale);
+    const coreModel = live2DModel.internalModel?.coreModel;
+    if (coreModel) {
+      coreModel.setParameterValueById("ParamMouthOpenY", speaking ? 0.25 + speechPulse * 0.75 : 0);
+    }
+    const wantedExpression = action ? expressionForAction(action.name) : "";
+    if (wantedExpression && live2DExpression !== wantedExpression) {
+      live2DExpression = wantedExpression;
+      live2DModel.expression(wantedExpression).catch(() => {});
+    } else if (!wantedExpression && live2DExpression) {
+      live2DExpression = "";
+      live2DModel.internalModel?.motionManager?.expressionManager?.resetExpression?.();
+    }
+    const idleDue = !action && proactivity !== "off" && elapsed >= nextIdleAction;
+    if (idleDue) {
+      const options = live2DIdleActions();
+      if (options.length) {
+        const outfitAction = options.includes("outfit") && Math.random() < 0.25;
+        triggerAction(outfitAction ? "outfit" : options[Math.floor(Math.random() * options.length)]);
+      }
+      scheduleNextIdleAction();
+    }
+  }
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
   if (canvas.width !== width || canvas.height !== height) {
     renderer.setSize(width, height, false);
     fitCamera();
   }
+  if (
+    live2DModel
+    && (live2DCanvas.clientWidth !== live2DSize.width
+      || live2DCanvas.clientHeight !== live2DSize.height)
+  ) {
+    fitLive2DModel();
+  }
   renderer.render(scene, camera);
 }
 frame();
+loadSelectedModel().catch(error => {
+  document.querySelector("#mood").textContent = `Model setup error: ${error.message}`;
+});
 
 canvas.onclick = () => {
   bond += 1;
@@ -398,6 +694,15 @@ window.bluePet.onMotion(value => {
 });
 window.bluePet.onAction(name => triggerAction(name));
 window.bluePet.onSpeaking(value => { speaking = value; });
+window.bluePet.onModelChanged(model => {
+  loadSelectedModel(model).catch(error => {
+    document.querySelector("#mood").textContent = `Model switch error: ${error.message}`;
+  });
+});
+window.bluePet.onBubble(value => {
+  if (typeof value === "string") showBubble(value);
+  else showBubble(value?.message, value?.durationMs);
+});
 window.bluePet.onPresence(value => {
   if (!value || typeof value !== "object") return;
   if (["off", "quiet", "balanced", "social"].includes(value.proactivity)) {

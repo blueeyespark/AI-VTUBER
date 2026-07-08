@@ -11,7 +11,12 @@ class BlueConfig:
     identity_name: str = "Blue"
     provider: str = "offline"
     model: str = "llama3.2"
+    openai_model: str = "gpt-5.5"
     ollama_url: str = "http://127.0.0.1:11434"
+    prefer_local_provider: bool = True
+    local_ram_gb: int = 8
+    ollama_context_tokens: int = 4096
+    ollama_gpu_layers: int = -1
     memory_result_limit: int = 5
     save_conversations: bool = False
 

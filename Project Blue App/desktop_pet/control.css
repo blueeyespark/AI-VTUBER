@@ -41,7 +41,7 @@ main { grid-column: 2; grid-row: 3; padding: 16px 18px 24px;
   font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .nav-note { margin-top: auto; padding: 10px; color: #6f879d; font-size: 10px;
   line-height: 1.6; border-top: 1px solid #213b52; }
-.conversation-bar { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
+.conversation-bar { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto auto;
   gap: 8px; margin-bottom: 10px; }
 .conversation-bar select, .conversation-bar input { margin: 0; }
 code { color: #8ed5ff; }
@@ -51,6 +51,7 @@ section > input, section > textarea, section > select { width: 100%; margin-top:
 h2 { margin: 0 0 10px; font-size: 17px; }
 #messages { height: clamp(240px, 42vh, 430px); overflow-y: auto; background: #07111f;
   border: 1px solid #213e59; border-radius: 8px; padding: 14px; white-space: pre-wrap; }
+#messages.active-drop { border-color: #73e2a7; background: #12372a; box-shadow: inset 0 0 0 1px #73e2a7; }
 .row { display: flex; gap: 8px; margin-top: 8px; }
 input { min-width: 0; flex: 1; border: 1px solid #315676; border-radius: 9px;
   padding: 10px; background: #07111f; color: white; }
@@ -67,6 +68,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 button.listening { background: #a9344d; border-color: #f08098; }
 button.secondary { background: #263d52; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ram-presets { display: grid; grid-template-columns: repeat(4, minmax(58px, 1fr)); gap: 7px; margin: 6px 0 10px; }
+.ram-presets button { padding: 7px 8px; }
 .status-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .status-chip { border: 1px solid #426784; border-radius: 999px; padding: 5px 9px;
   background: #07111f; color: #cfe8fa; font-size: 12px; }
@@ -77,12 +80,30 @@ button.secondary { background: #263d52; }
 .security-summary { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
 .presence-panel .grid { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
 .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); gap: 8px; }
+.model-picker-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+  padding: 18px; background: #020811c8; }
+.model-picker-dialog { width: min(720px, 100%); max-height: min(720px, 92vh); overflow: auto;
+  background: #102238; border-color: #54b4ff; box-shadow: 0 24px 60px #000b; }
+.model-choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px; margin: 12px 0; }
+.model-choice { min-height: 118px; text-align: left; background: #07111f;
+  border: 1px solid #315676; border-radius: 8px; padding: 12px; }
+.model-choice:hover { filter: none; border-color: #78c6ff; }
+.model-choice[aria-selected="true"] { border-color: #73e2a7; box-shadow: inset 3px 0 #73e2a7; }
+.model-choice strong { display: block; margin-bottom: 5px; color: #dff4ff; }
+.model-choice span { display: inline-block; margin-bottom: 8px; color: #87e6b6; font-size: 12px; }
+.model-choice p { margin: 0; color: #9ab2c9; font-size: 12px; line-height: 1.35; }
 .hint { color: #9ab2c9; font-size: 12px; margin-bottom: 0; }
 .field-label { display: block; margin: 8px 0; color: #b9d2e8; font-size: 12px; }
 .field-label input { width: 100%; margin-top: 5px; }
 #dropZone { margin: 8px 0; padding: 20px; border: 2px dashed #3b6c92; border-radius: 10px;
   color: #9fd7ff; text-align: center; background: #07111f80; }
 #dropZone.active { border-color: #73e2a7; background: #12372a; }
+.artifact-preview { margin-top: 10px; padding-top: 10px; border-top: 1px solid #29425c; }
+.artifact-preview .row { flex-wrap: wrap; }
+.artifact-preview img { display: block; width: min(100%, 520px); max-height: 360px;
+  margin-top: 10px; object-fit: contain; border: 1px solid #315676; border-radius: 8px;
+  background: #07111f; }
 pre { white-space: pre-wrap; max-height: 180px; overflow: auto; color: #cfe8fa; }
 .workbench-status { grid-column: 1 / -1; grid-row: 4; display: flex; align-items: center;
   gap: 18px; padding: 3px 10px; overflow: hidden; white-space: nowrap;

@@ -1,0 +1,16 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.projectblue.phone"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.projectblue.phone"
+        minSdk 23
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+    }
+}

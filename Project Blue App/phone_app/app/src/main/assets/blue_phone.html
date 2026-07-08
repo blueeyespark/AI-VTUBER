@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Project Blue</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07111f; --panel:#102238; --line:#294b68; --text:#eaf4ff; --muted:#9ab2c9; --blue:#1672b8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    main { min-height: 100vh; padding: 16px; display: grid; align-content: start; gap: 12px; }
+    h1 { margin: 0; color: #54b4ff; font-size: 26px; }
+    section { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); }
+    input, textarea, button { width: 100%; margin-top: 8px; padding: 11px; border-radius: 8px; border: 1px solid #315676; font: inherit; }
+    input, textarea { background: #07111f; color: white; }
+    textarea { min-height: 96px; resize: vertical; }
+    button { background: var(--blue); color: white; }
+    button.secondary { background: #263d52; }
+    pre { white-space: pre-wrap; background: #07111f; padding: 10px; border-radius: 8px; overflow: auto; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .hint { color: var(--muted); font-size: 13px; }
+    .approval { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Project Blue</h1>
+    <section>
+      <strong>Connect to PC</strong>
+      <input id="bridgeUrl" placeholder="http://192.168.1.20:8776/">
+      <input id="token" type="password" placeholder="Pairing token (optional if disabled on PC)">
+      <div class="row">
+        <button id="save">Save</button>
+        <button id="status" class="secondary">Test</button>
+      </div>
+      <p class="hint">Start Phone Bridge inside Project Blue on the PC, then copy the URL here. Leave token blank if tokenless bridge mode is enabled on the PC.</p>
+    </section>
+    <section>
+      <strong>Chat</strong>
+      <textarea id="message" placeholder="Talk to Blue..."></textarea>
+      <button id="send">Send</button>
+      <pre id="reply">Ready.</pre>
+    </section>
+    <section>
+      <strong>Approval Queue</strong>
+      <button id="refresh">Refresh</button>
+      <div id="approvals"></div>
+    </section>
+  </main>
+  <script>
+    const bridgeUrl = document.querySelector("#bridgeUrl");
+    const tokenInput = document.querySelector("#token");
+    const reply = document.querySelector("#reply");
+    bridgeUrl.value = localStorage.getItem("blueBridgeUrl") || "";
+    tokenInput.value = localStorage.getItem("bluePhoneToken") || "";
+
+    function baseUrl() {
+      const value = bridgeUrl.value.trim();
+      return value.endsWith("/") ? value.slice(0, -1) : value;
+    }
+    function saveSettings() {
+      localStorage.setItem("blueBridgeUrl", bridgeUrl.value.trim());
+      localStorage.setItem("bluePhoneToken", tokenInput.value.trim());
+    }
+    async function api(path, options = {}) {
+      saveSettings();
+      const response = await fetch(baseUrl() + path, {
+        ...options,
+        headers: { "content-type": "application/json", "x-blue-token": tokenInput.value.trim(), ...(options.headers || {}) }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Request failed");
+      return data;
+    }
+    async function testStatus() {
+      reply.textContent = "Testing...";
+      try {
+        const data = await api("/api/status");
+        reply.textContent = "Connected to Blue. Queued approvals: " + data.approvals;
+      } catch (error) {
+        reply.textContent = error.message;
+      }
+    }
+    async function sendChat() {
+      reply.textContent = "Thinking...";
+      try {
+        const data = await api("/api/chat", {
+          method: "POST",
+          body: JSON.stringify({ message: document.querySelector("#message").value })
+        });
+        reply.textContent = data.reply;
+        document.querySelector("#message").value = "";
+      } catch (error) {
+        reply.textContent = error.message;
+      }
+    }
+    async function loadApprovals() {
+      const container = document.querySelector("#approvals");
+      container.textContent = "Loading...";
+      try {
+        const data = await api("/api/approvals");
+        container.innerHTML = data.approvals.length ? "" : "<p class='hint'>No approval questions queued.</p>";
+        for (const item of data.approvals) {
+          const row = document.createElement("div");
+          row.className = "approval";
+          row.innerHTML = "<strong></strong><p></p><pre></pre><button>Approve</button><button class='secondary'>Deny</button>";
+          row.querySelector("strong").textContent = item.kind + " - " + item.status;
+          row.querySelector("p").textContent = item.summary;
+          row.querySelector("pre").textContent = item.details || item.target || "";
+          const buttons = row.querySelectorAll("button");
+          buttons[0].onclick = () => answer(item.id, "approved");
+          buttons[1].onclick = () => answer(item.id, "denied");
+          container.append(row);
+        }
+      } catch (error) {
+        container.textContent = error.message;
+      }
+    }
+    async function answer(id, decision) {
+      await api("/api/approvals/" + encodeURIComponent(id), {
+        method: "POST",
+        body: JSON.stringify({ decision })
+      });
+      await loadApprovals();
+    }
+    document.querySelector("#save").onclick = () => { saveSettings(); reply.textContent = "Saved connection settings."; };
+    document.querySelector("#status").onclick = testStatus;
+    document.querySelector("#send").onclick = sendChat;
+    document.querySelector("#refresh").onclick = loadApprovals;
+  </script>
+</body>
+</html>

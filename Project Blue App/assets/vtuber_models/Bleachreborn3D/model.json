@@ -1,0 +1,8 @@
+{
+  "name": "qwen 3D",
+  "type": "3d",
+  "format": "vrm",
+  "path": "goddess-blender-file.vrm",
+  "outfits": ["Default"],
+  "description": "Imported VROID / VRM 3D model from the Goddess Blender file export."
+}

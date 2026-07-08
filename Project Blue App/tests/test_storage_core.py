@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from project_blue.core import BlueCore
 from project_blue.storage import BlueStorage
@@ -421,6 +422,22 @@ class CoreTests(unittest.TestCase):
         report = self.core.provider_status()
         self.assertTrue(report["available"])
         self.assertEqual("offline", report["provider"])
+
+    def test_openai_provider_status_requires_environment_key(self):
+        self.core.update_config("provider", "openai")
+        with patch.dict("os.environ", {}, clear=True):
+            report = self.core.provider_status()
+        self.assertFalse(report["available"])
+        self.assertEqual("openai", report["provider"])
+        self.assertIn("OPENAI_API_KEY", report["detail"])
+
+    def test_configure_openai_model(self):
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
+            report = self.core.configure_openai_model("gpt-5.5")
+        self.assertTrue(report["available"])
+        self.assertTrue(report["configured"])
+        self.assertEqual("openai", self.core.config.provider)
+        self.assertEqual("gpt-5.5", self.core.config.openai_model)
 
     def test_source_and_citation_workflow(self):
         source_path = Path(self.temp.name) / "blue-notes.md"

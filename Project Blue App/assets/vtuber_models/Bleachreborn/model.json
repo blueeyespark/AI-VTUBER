@@ -1,0 +1,8 @@
+{
+  "name": "qwen",
+  "type": "2d",
+  "format": "live2d",
+  "path": "bleachreborn.model3.json",
+  "outfits": ["Outfit 2"],
+  "description": "Imported VTube Studio / Live2D model with Cubism rig files, physics, expressions, and movement."
+}

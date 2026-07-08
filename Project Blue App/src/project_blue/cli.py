@@ -99,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     model_setup.add_argument("--model")
 
+    openai_setup = sub.add_parser(
+        "openai-setup", help="Configure OpenAI as Blue's chat provider"
+    )
+    openai_setup.add_argument("--model")
+
     source_add = sub.add_parser("source-add", help="Add a UTF-8 text source")
     source_add.add_argument("source", type=Path)
     source_add.add_argument("--title")
@@ -132,6 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     conversation_show.add_argument("conversation")
 
+    conversation_delete = sub.add_parser(
+        "conversation-delete", help="Delete a named conversation"
+    )
+    conversation_delete.add_argument("conversation")
+    conversation_delete.add_argument("--confirm", action="store_true")
+
     conversation_chat = sub.add_parser(
         "conversation-chat", help="Chat inside a named conversation"
     )
@@ -140,7 +151,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     config = sub.add_parser("config", help="Update local configuration")
     config.add_argument(
-        "key", choices=["provider", "model", "ollama_url", "save_conversations"]
+        "key",
+        choices=[
+            "provider",
+            "model",
+            "openai_model",
+            "ollama_url",
+            "prefer_local_provider",
+            "local_ram_gb",
+            "ollama_context_tokens",
+            "ollama_gpu_layers",
+            "save_conversations",
+        ],
     )
     config.add_argument("value")
 
@@ -789,6 +811,10 @@ def main(argv: list[str] | None = None) -> int:
             report = core.configure_local_model(args.model)
             print(json.dumps(report, indent=2))
             return 0 if report["configured"] else 1
+        elif args.command == "openai-setup":
+            report = core.configure_openai_model(args.model)
+            print(json.dumps(report, indent=2))
+            return 0 if report["available"] else 1
         elif args.command == "source-add":
             print(f"Source added: {core.add_source(args.source, args.title)}")
         elif args.command == "sources":
@@ -849,6 +875,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"# {conversation['title']}")
             for row in core.storage.conversation_entries(conversation["id"]):
                 print(f"{row['role']}> {row['content']}")
+        elif args.command == "conversation-delete":
+            if not args.confirm:
+                raise ValueError("Use --confirm to delete a conversation.")
+            deleted = core.delete_conversation(args.conversation)
+            print(f"Deleted conversation: {deleted['title']} ({deleted['id']})")
         elif args.command == "conversation-chat":
             response, decision = core.conversation_chat(
                 args.conversation, args.message

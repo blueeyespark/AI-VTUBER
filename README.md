@@ -9,12 +9,12 @@ Current release: **Project Blue v3.3 / Desktop Pet v2.3.0**
 
 ## Repository map
 
-- `Project Blue App/` — canonical Python and Electron application source
-- `Project Blue App/desktop_pet/` — control center and roaming VRM desktop pet
-- `Project Blue App/assets/` — Blue's VRM, Blender source, and reference assets
-- `Project Blue Data Center/` — architecture, safety, operations, and roadmap
-- `START_PROJECT_BLUE_HERE.md` — local launch overview
-- `PROJECT_BLUE_BUILD_STATUS_V330_INSTALLED.md` — current verified build status
+- `Project Blue App/` - canonical Python and Electron application source
+- `Project Blue App/desktop_pet/` - control center and roaming VRM desktop pet
+- `Project Blue App/assets/` - Blue's VRM, Blender source, and reference assets
+- `Project Blue Data Center/` - architecture, safety, operations, and roadmap
+- `START_PROJECT_BLUE_HERE.md` - local launch overview
+- `PROJECT_BLUE_BUILD_STATUS_V330_INSTALLED.md` - current verified build status
 
 The local development workspace, runtime databases, secrets, dependency folders,
 and historical database backups are intentionally excluded from Git.
@@ -57,6 +57,69 @@ cd "Project Blue App"
 .\run_blue.ps1
 ```
 
+## VTuber models
+
+Blue's main avatar assets live in:
+
+- `Project Blue App/assets/`
+- `Project Blue App/assets/vtuber_models/`
+- `Project Blue App/desktop_pet/`
+
+When the desktop app opens, the control center asks which VTuber model to use.
+Blue currently supports the built-in 3D VRM model and a built-in 2D portrait
+mode. New 2D or 3D VTuber models should be added under
+`Project Blue App/assets/vtuber_models/` with a `model.json` manifest. They can
+then be selected from the startup picker or the Motion tab.
+
+Planned model features:
+
+- Startup model picker in the control center
+- Support multiple saved avatar profiles
+- Allow switching between Blue and other VTuber models
+- Keep model files, textures, and rig notes grouped together
+- Track which model is active in local settings
+
+Voice support starts with installed Windows/browser voices, Listen Once, and
+Wake Listen. Wake Listen can be configured with phrases like `hey blue`,
+`hay blue`, or any custom wake word. An optional owner phrase lock can reduce
+accidental activation, but it is not biometric speaker recognition. True
+voiceprint matching and trained/custom voice providers are planned for a later
+milestone.
+
+## OpenAI chat
+
+Blue can use OpenAI for generated conversation while keeping runtime secrets out
+of Git. Set your API key as an environment variable, then configure OpenAI as
+the provider:
+
+```powershell
+setx OPENAI_API_KEY "your_api_key_here"
+```
+
+Restart your terminal after `setx`, then run:
+
+```powershell
+cd "Project Blue App"
+.\run_blue.ps1 openai-setup --model gpt-5.5
+.\run_blue.ps1 provider-check
+.\run_blue.ps1 chat "Hello Blue"
+```
+
+Blue reads `OPENAI_API_KEY` from the environment. Do not paste API keys into
+chat, screenshots, source files, `.blue` runtime data, or Git commits.
+
+## Local Ollama setup
+
+On first run, the desktop app asks whether the user wants to download Ollama for
+local AI thinking. Choosing Download opens the official Windows page:
+
+```text
+https://ollama.com/download/windows
+```
+
+Ollama is optional. If it is installed and a local model is available, Blue can
+prefer that local model before OpenAI.
+
 ## Safety and privacy
 
 Blue is designed around local storage, explicit approvals, provenance, bounded
@@ -73,3 +136,27 @@ braking, speed-driven procedural gait, foot-contact approximation, torso
 counter-motion, and bounded secondary hair/tail movement. Planned Blender and
 runtime animation work is recorded in
 `BLUE_ANIMATION_MOVEMENT_FUTURE_IMPROVEMENTS_V330.md`.
+
+## Direction
+
+Project Blue is moving toward a full AI companion that can chat with the user,
+help moderate Discord, help moderate Twitch, and use OpenAI for natural language
+conversation and future voice interaction.
+
+Planned assistant features:
+
+- OpenAI-powered chat and reasoning
+- Discord moderation with clear permissions and audit records
+- Twitch chat moderation and stream companion behavior
+- Local memory for ongoing conversations
+- A learning queue for requests like "hey qwen, learn how to..." that stores
+  topics and notes before any feature is built into code
+- Local-first thinking through installed Ollama models, with configurable RAM
+  budget, context size, and GPU layer settings to reduce OpenAI use
+- Approval gates before sensitive or destructive actions
+- Voice conversation in a later milestone
+
+Learning requests are not treated as instant authority. Blue saves the topic,
+can run an online starter research pass to collect sources and summaries, tests
+what it can, and only then drafts code changes through the normal review, test,
+and approval workflow.
