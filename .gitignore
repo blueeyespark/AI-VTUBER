@@ -1,4 +1,4 @@
-# Project Blue private runtime state and secrets
+﻿# Project Blue private runtime state and secrets
 **/.blue/
 **/desktop_state/
 **/*.db
@@ -42,3 +42,6 @@ Project Blue App/assets/movement_references/*.mp4
 Thumbs.db
 Desktop.ini
 .DS_Store
+# Temporary UI rebuild backups
+ui_failed_backup/
+Project Blue App/desktop_pet/_ui_backup_*/

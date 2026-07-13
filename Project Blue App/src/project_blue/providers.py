@@ -35,7 +35,7 @@ class OfflineProvider:
     ) -> str:
         """Give grounded, useful replies even without a generative model."""
         normalized = " ".join(prompt.lower().split())
-        identity = "I'm Blue, an all-around local AI desktop companion running in foundation mode."
+        identity = "I'm Blue, an AI and all-around local AI desktop companion running in local foundation mode."
         if any(
             phrase in normalized
             for phrase in ("what can you do", "your capabilities", "how can you help")

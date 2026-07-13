@@ -1,5 +1,6 @@
 # Project Blue Staged Build Status
 
+> Current repository launcher: use `START_BLUE.ps1` or `START_BLUE.cmd` from `C:\Users\adahn\Downloads\AI-VTUBER-main\AI-VTUBER-main`. This file is an older staged-build record.
 Build date: 2026-07-03  
 Version: `1.2.0`  
 Milestone: Activated Assistant  

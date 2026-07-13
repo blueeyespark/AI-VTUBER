@@ -4,16 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Project Blue Control Center</title>
-  <link rel="stylesheet" href="control.css">
+  <link rel="stylesheet" href="control-ide.css">
 </head>
 <body>
   <header>
-    <img src="../src/project_blue/data/blue_avatar.png" alt="Blue">
-    <div class="brand"><h1>Project Blue</h1><p>Local AI workbench</p></div>
+    <div class="brand">
+      <img src="../src/project_blue/data/blue_avatar.png" alt="Blue">
+      <div><p>One identity. Every workspace.</p><h1>Project Blue</h1></div>
+    </div>
     <div class="command-shell">
-      <span aria-hidden="true">âŒ•</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4a5.5 5.5 0 0 1 4.35 8.86l4.64 4.65-1.42 1.42-4.64-4.64A5.5 5.5 0 1 1 9.5 4Zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg>
       <input id="commandSearch" list="blueCommands" autocomplete="off"
-        placeholder="Search controls or type a commandâ€¦ (Ctrl+K)"
+        placeholder="Search controls or type a command... (Ctrl+K)"
         aria-label="Search Blue controls">
       <datalist id="blueCommands">
         <option value="New conversation"></option>
@@ -63,22 +65,38 @@
       </div>
     </section>
   </div>
-  <nav class="tab-bar" aria-label="Blue control panel sections">
-    <div class="nav-heading">Workspace</div>
-    <button data-tab="chat" data-icon="â—†" aria-selected="true">Chat</button>
-    <button data-tab="share" data-icon="+">Share</button>
-    <button data-tab="voice" data-icon="!">Voice</button>
-    <button data-tab="presence" data-icon="â—‰">Presence</button>
-    <button data-tab="create" data-icon="âœ¦">Create</button>
-    <button data-tab="expansion" data-icon="â–¦">Expansion</button>
-    <button data-tab="motion" data-icon="âžœ">Motion</button>
-    <button data-tab="discord" data-icon="â—Œ">Discord</button>
-    <button data-tab="security" data-icon="âŒ¾">Security</button>
-    <button data-tab="system" data-icon="âš™">System</button>
-    <div class="nav-note">Ctrl+1...0 switches views<br>Ctrl+K searches controls</div>
+  <nav id="activityBar" class="activity-bar" aria-label="Project Blue activities">
+    <button data-tab="overview" title="Overview" aria-label="Overview"></button>
+    <button data-tab="workspace" title="Workspace" aria-label="Workspace"></button>
+    <button data-tab="ai" title="AI & Presence" aria-label="AI & Presence"></button>
+    <button data-tab="systems" title="Systems" aria-label="Systems"></button>
+    <button data-tab="tools" title="Tools" aria-label="Tools"></button>
+    <button data-tab="streaming" title="Streaming" aria-label="Streaming"></button>
+    <button data-tab="discord" title="Discord" aria-label="Discord"></button>
+    <button data-tab="mesh" title="BlueMesh" aria-label="BlueMesh"></button>
+    <button data-tab="settings" title="Settings" aria-label="Settings"></button>
   </nav>
+  <aside id="contextSidebar" class="context-sidebar" aria-label="Context sidebar">
+    <div class="sidebar-title">Workspace</div>
+    <div class="sidebar-content"></div>
+  </aside>
   <main>
-    <section class="presence-panel" data-panel="presence" hidden>
+    <div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open editors"></div>
+    <div class="editor-surface">
+    <section data-panel="overview" data-editor="welcome">
+      <h2>Good to see you.</h2>
+      <p>Project Blue is organized as one desktop workbench. Use the activity icons to move between tools, or press Ctrl+K and type a command.</p>
+      <div class="grid">
+        <button data-open-activity="workspace" data-open-editor="blue-chat">Open Workspace</button>
+        <button data-open-activity="tools" data-open-editor="diagnostics" class="secondary">Open Diagnostics</button>
+        <button data-open-activity="mesh" data-open-editor="identity" class="secondary">Open BlueMesh</button>
+      </div>
+    </section>
+    <section data-panel="overview" data-editor="function-map" hidden>
+      <h2>Function Map</h2>
+      <pre id="functionMapDetails">Run Check Functions from Tools to verify UI wiring.</pre>
+    </section>
+    <section class="presence-panel" data-panel="ai" data-editor="presence" hidden>
       <h2>Presence and Privacy</h2>
       <label class="field-label">How proactive should Blue be?
         <select id="proactivity">
@@ -104,23 +122,94 @@
       <p class="hint">Blue does not watch your screen automatically. Observation History only records metadata for images you deliberately share. Vision and microphone capture remain unavailable until permission-gated providers are built.</p>
       <pre id="presenceDetails">Loading local presence status...</pre>
     </section>
-    <section class="chat" data-panel="chat">
-      <h2>Talk to Blue</h2>
-      <div class="conversation-bar">
-        <select id="conversationSelect" aria-label="Current conversation"></select>
-        <input id="newConversationName" maxlength="120" placeholder="New conversation name">
-        <button id="newConversation">New</button>
-        <button id="deleteConversation" class="secondary" title="Delete this chat only. Learned memories, research notes, sources, and artifacts stay saved.">Delete Chat</button>
+    <section class="chat workspace-editor" data-panel="workspace" data-editor="blue-chat">
+      <div class="workspace-editor-layout">
+        <div class="workspace-main-pane">
+          <div class="editor-header compact">
+            <div>
+              <p class="eyebrow">Blue Command Chat</p>
+              <h2>Blue Chat</h2>
+            </div>
+            <button id="chatRunAudit" class="secondary small">Check Functions</button>
+          </div>
+          <div class="conversation-bar compact">
+            <select id="conversationSelect" aria-label="Current conversation"></select>
+            <input id="newConversationName" maxlength="120" placeholder="New conversation name">
+            <button id="newConversation">New</button>
+            <button id="deleteConversation" class="secondary" title="Delete this chat only. Learned memories, research notes, sources, and artifacts stay saved.">Delete</button>
+          </div>
+          <div id="messages" class="message-list" title="Drop files, images, folders, or text here to share with Blue">
+            <div class="message-group blue-message"><div class="message-avatar">B</div><div class="message-body"><div class="message-meta">Blue ? Ready</div><div>I am here. What shall we work on?</div></div></div>
+          </div>
+          <div id="attachmentChips" class="attachment-chips" aria-live="polite"></div>
+          <div class="composer" aria-label="Blue chat composer">
+            <textarea id="prompt" rows="2" autocomplete="off" placeholder="Message Blue, paste a link, describe an image task, ask for research, or type /help..."></textarea>
+            <div class="composer-actions">
+              <button id="listen" class="icon-action" title="Listen locally for up to eight seconds" aria-label="Listen once">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Zm5 8a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg>
+              </button>
+              <button id="chatAttachFiles" class="icon-action" title="Attach files" aria-label="Attach files">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 2.8L17.2 8H14V4.8ZM8 12h8v2H8v-2Zm0 4h8v2H8v-2Z"/></svg>
+              </button>
+              <button id="chatAttachImages" class="icon-action" title="Attach images" aria-label="Attach images">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5V5Zm2 2v8.6l3.2-3.2 2.4 2.4 3.2-4.2L17 12v5H7V7Zm3 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
+              </button>
+              <button id="chatAttachFolder" class="icon-action" title="Attach folder" aria-label="Attach folder">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm2 2v10h14V8H5Z"/></svg>
+              </button>
+              <div class="more-menu-wrap">
+                <button id="chatMoreActions" class="icon-action" title="More actions" aria-label="More actions" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg>
+                </button>
+                <div id="chatMoreMenu" class="more-menu" hidden>
+                  <button id="chatPasteClipboard" class="menu-item">Paste clipboard</button>
+                  <button id="chatScanImage" class="menu-item">OCR image</button>
+                  <button id="chatToolOcr" class="menu-item">Use OCR text</button>
+                  <button id="chatToolPaste" class="menu-item">Send paste box</button>
+                  <button id="chatToolIdea" class="menu-item">Create idea</button>
+                  <button id="chatToolLearn" class="menu-item">Create learning request</button>
+                  <button id="chatToolResearch" class="menu-item">Start deep research</button>
+                  <button id="chatToolAgent" class="menu-item">Create agent plan</button>
+                  <button id="chatVoiceSkip" class="menu-item">Skip voice</button>
+                  <button id="chatVoiceToggle" class="menu-item">Toggle voice</button>
+                </div>
+              </div>
+              <button id="send" class="primary-send">Send</button>
+            </div>
+          </div>
+          <div class="workspace-hidden-tools" hidden>
+            <textarea id="pasteBox" placeholder="Paste text, notes, or a link here"></textarea>
+            <button id="pasteSend">Send Pasted Content</button>
+            <button id="files">Files</button><button id="images">Images</button><button id="folder">Folder</button><button id="clipboard">Paste Clipboard</button><button id="scanImage">Scan Image Text Locally</button>
+            <button id="useOcr" class="secondary" disabled>Use OCR Text in Paste Box</button>
+            <button id="referenceStatus" class="secondary">Current Outfit Reference</button>
+            <button id="referenceUseLatest" class="secondary">Use Latest as Base Ref</button>
+            <button id="styleReferenceUseLatest" class="secondary">Use Latest as Outfit Ref</button>
+            <button id="referenceClear" class="secondary">Clear Base Ref</button>
+            <button id="styleReferenceClear" class="secondary">Clear Outfit Ref</button>
+          </div>
+        </div>
+        <aside id="blueContextPanel" class="blue-context-panel" aria-label="Blue Context">
+          <div class="context-panel-header">
+            <h3>Blue Context</h3>
+            <button id="blueContextCollapse" class="icon-action small" title="Collapse context" aria-label="Collapse Blue Context">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5 8.5 12l7 7-1.4 1.4L5.7 12l8.4-8.4L15.5 5Z"/></svg>
+            </button>
+          </div>
+          <div class="context-panel-section"><span>Current Goal</span><strong id="ctxGoal">Idle</strong></div>
+          <div class="context-panel-section"><span>Current Task</span><strong id="ctxTask">None selected</strong></div>
+          <div class="context-panel-section"><span>Active Project</span><strong id="ctxProject">Project Blue</strong></div>
+          <div class="context-panel-section"><span>Active File</span><strong id="ctxFile">None selected</strong></div>
+          <div class="context-panel-section"><span>Recent Memory</span><strong id="ctxMemory">Not available</strong></div>
+          <div class="context-panel-section"><span>Suggestions</span><strong id="ctxSuggestions">Idle</strong></div>
+          <div class="context-panel-section"><span>Active Services</span><strong id="ctxServices">Local mode</strong></div>
+          <div class="context-panel-section"><span>Confidence</span><strong id="ctxConfidence">Not available</strong></div>
+          <div class="context-panel-section"><span>Pending Approvals</span><strong id="ctxApprovals">None</strong></div>
+          <div id="dropZone" class="context-dropzone">Drop files, images, folders, links, or notes here</div>
+          <textarea id="ocrResult" readonly placeholder="Local OCR results will appear here."></textarea>
+          <div id="referenceSummary" class="hint">No base model reference is set.</div>
+        </aside>
       </div>
-      <div id="messages" title="Drop files, images, folders, or text here to share with Blue"><p><b>blue&gt;</b> I am here. What shall we work on?</p></div>
-      <div class="row">
-        <input id="prompt" autocomplete="off" placeholder="Talk to Blue...">
-        <button id="listen" title="Listen locally for up to eight seconds">Listen Once</button>
-        <button id="chatVoiceToggle" class="secondary" title="Turn Blue's spoken replies on or off">Voice: On</button>
-        <button id="chatVoiceSkip" class="secondary" title="Stop Blue's current spoken reply">Skip Voice</button>
-        <button id="send">Send</button>
-      </div>
-      <p class="hint">Drop files, images, folders, or text into the chat window to share them with Blue. Deleting a chat removes old messages only; learned memories, research notes, sources, and artifacts stay saved.</p>
     </section>
     <section id="deepResearchPrompt" class="model-picker-overlay" hidden>
       <div class="model-picker-dialog">
@@ -132,35 +221,7 @@
         </div>
       </div>
     </section>
-    <section data-panel="share" hidden>
-      <h2>Paste or Drop Anything</h2>
-      <textarea id="pasteBox" placeholder="Paste text, notes, or a link here - like a normal chat box."></textarea>
-      <div id="dropZone">Drop files, images, or folders here</div>
-      <button id="pasteSend">Send Pasted Content</button>
-    </section>
-    <section data-panel="share" hidden>
-      <h2>Browse and Share</h2>
-      <div class="grid">
-        <button id="files">Files</button><button id="images">Images</button>
-        <button id="folder">Folder</button><button id="clipboard">Paste Clipboard</button>
-        <button id="scanImage">Scan Image Text Locally</button>
-      </div>
-      <textarea id="ocrResult" readonly placeholder="Local OCR results will appear here."></textarea>
-      <button id="useOcr" class="secondary" disabled>Use OCR Text in Paste Box</button>
-      <div class="artifact-preview">
-        <div class="row">
-          <button id="referenceStatus" class="secondary">Current Outfit Reference</button>
-          <button id="referenceUseLatest" class="secondary">Use Latest as Base Ref</button>
-          <button id="styleReferenceUseLatest" class="secondary">Use Latest as Outfit Ref</button>
-          <button id="referenceClear" class="secondary">Clear Base Ref</button>
-          <button id="styleReferenceClear" class="secondary">Clear Outfit Ref</button>
-        </div>
-        <div id="referenceSummary" class="hint">Dropped images are shared context first. Say "use the dropped image as the base reference" for the character, or "use the dropped image as the outfit reference" for a second clothing/style photo.</div>
-      </div>
-      <p class="hint">Folders are indexed read-only. Non-text files are copied into Blue's private inbox.</p>
-      <p class="hint">Image scanning uses Windows.Media.Ocr on this PC. It does not watch the screen or upload the image, and extracted text is never sent automatically.</p>
-    </section>
-    <section data-panel="voice" hidden>
+    <section data-panel="ai" data-editor="voice" hidden>
       <h2>Blue's Voice</h2>
       <div class="grid">
         <button id="voiceToggle">Voice: On</button><button id="voiceSkip" class="secondary">Skip Voice</button>
@@ -199,7 +260,7 @@
       <textarea id="customVoiceNote" maxlength="500" placeholder="Notes for a future trained/custom voice provider..."></textarea>
       <p class="hint">Wake words follow the active model: qwen models use "hey qwen"; Blue models use "hey blue". Windows speech listens through the current Windows default input device. Pick a mic here for Blue's settings, then use Windows Mic Settings to make it the default if Wake Listen cannot hear you.</p>
     </section>
-    <section data-panel="voice" hidden>
+    <section data-panel="ai" data-editor="local-ai" hidden>
       <h2>Local AI Brain</h2>
       <div class="grid">
         <button id="providerStatus">Check AI Model</button>
@@ -228,7 +289,7 @@
       <button id="saveLocalCompute" class="secondary">Save Local Compute Settings</button>
       <p class="hint">Blue never downloads or purchases a model silently. If Ollama and a model are already installed locally, Connect Installed Model selects it for contextual conversation.</p>
     </section>
-    <section data-panel="create" hidden>
+    <section data-panel="workspace" data-editor="research-lab" hidden>
       <h2>Blue Laboratory and Genome</h2>
       <input id="labTitle" maxlength="200" placeholder="Name this idea or question">
       <select id="labKind" aria-label="Laboratory record type">
@@ -265,7 +326,7 @@
       </div>
       <pre id="agentDetails">Agent mode plans goals, tracks steps, queues approvals, and routes work through Project Blue's safe tools. MiniMax chooses a next step by maximizing progress and minimizing risk/cost.</pre>
     </section>
-    <section data-panel="expansion" hidden>
+    <section data-panel="workspace" data-editor="idea-lab" hidden>
       <h2>Safe Expansion Foundations</h2>
       <p class="hint">Build structured local foundations for the screenshot roadmap. These records cannot transfer money, publish content, control another PC, diagnose illness, move hardware, or execute automation.</p>
       <div class="grid">
@@ -296,9 +357,22 @@
         <button id="expansionSave">Save Safe Foundation Record</button>
         <button id="expansionRefresh" class="secondary">Refresh Domain Status</button>
       </div>
-      <pre id="expansionDetails">Loading expansion foundationsâ€¦</pre>
+      <pre id="expansionDetails">Loading expansion foundations...</pre>
     </section>
-    <section data-panel="motion" hidden>
+    <section data-panel="workspace" data-editor="file-preview" hidden>
+      <h2>File Preview</h2>
+      <p class="hint">Files, folders, pasted links, OCR output, and selected project context open here when Blue inspects them.</p>
+      <pre>Nothing selected yet.</pre>
+    </section>
+    <section data-panel="workspace" data-editor="generated-result" hidden>
+      <h2>Generated Result</h2>
+      <div class="artifact-preview"><div id="generatedResultSummary" class="hint">Generated results appear here after Blue creates or opens them.</div></div>
+    </section>
+    <section data-panel="workspace" data-editor="project-notes" hidden>
+      <h2>Project Notes</h2>
+      <textarea placeholder="Notes for the current Project Blue task."></textarea>
+    </section>
+    <section data-panel="ai" data-editor="avatar" hidden>
       <h2>Movement and Expressions</h2>
       <label class="field-label">Active VTuber model
         <select id="vtuberModelSelect"></select>
@@ -323,14 +397,22 @@
       </div>
       <p class="hint">Blue travels between places on your desktop, alternates walking and running, and blends expressions and gestures without snapping the rig.</p>
     </section>
-    <section data-panel="motion" hidden>
+    <section data-panel="ai" data-editor="movement" hidden>
       <h2>Desktop and OBS</h2>
       <div class="grid">
         <button id="showPet">Show Pet</button><button id="wander">Resume Wandering</button>
       </div>
       <p class="hint">In OBS, add a Window Capture source named "Blue 3D Pet - OBS Capture".</p>
     </section>
-    <section data-panel="discord" hidden>
+    <section data-panel="streaming" data-editor="streaming-studio" hidden>
+      <h2>Streaming Studio</h2>
+      <p class="hint">Streaming tools are grouped here for OBS, scenes, platform setup, chat reading, moderation, titles, and avatar output. Existing OBS/streaming backend modules are preserved for the next wiring pass.</p>
+      <div class="grid"><button id="streamingStatusRefresh">Refresh Streaming Status</button><button data-open-editor="obs">OBS</button><button data-open-editor="platforms" class="secondary">Platforms</button><button data-open-editor="moderation" class="secondary">Moderation</button><button id="streamingChatReadiness" class="secondary">Chat Readiness</button><button id="streamingRulesCheck" class="secondary">Rules Check</button><button id="streamingModerationPlan" class="secondary">Moderation Plan</button><button id="streamingIndependencePlan" class="secondary">Independent Stream Plan</button><button id="streamingGoLiveChecklist" class="secondary">Go Live Checklist</button></div>
+    </section>
+    <section data-panel="streaming" data-editor="obs" hidden><h2>OBS</h2><p class="hint">OBS websocket status, scene inspection, and safe scene-edit actions live here.</p><div class="grid"><button id="streamingObsSave">Save OBS Config</button><button id="streamingObsCheck">Check OBS Connection</button><button id="streamingObsSceneRefresh">Refresh Scenes</button><button id="streamingObsCaptureGuide">OBS Capture Guide</button><button id="streamingObsSceneSwitch" class="secondary">Switch Scene</button></div><pre id="streamingStatusDetails">OBS state: not connected.</pre></section>
+    <section data-panel="streaming" data-editor="platforms" hidden><h2>Platforms</h2><p class="hint">Safe-for-work and adult platform planning belongs here with platform rules and permission gates before any live automation.</p><div class="grid"><button id="streamingSavePlatform">Save Platform Plan</button><button id="streamingToggleVrm" class="secondary">Toggle VRM</button><button id="streamingToggleLive2d" class="secondary">Toggle Live2D</button><button id="streamingToggleWarudo" class="secondary">Toggle Warudo</button><button id="streamingVoiceSafety" class="secondary">Voice Safety</button><button id="streamingVoiceTest" class="secondary">Streaming Voice Test</button></div></section>
+    <section data-panel="streaming" data-editor="moderation" hidden><h2>Moderation</h2><p class="hint">Chat rules, banned words, platform boundaries, and approval modes are configured here.</p></section>
+    <section data-panel="discord" data-editor="connection" hidden>
       <h2>Discord Add-on</h2>
       <p class="hint">Creates guild-only <code>/blue status</code> and <code>/blue ask</code> commands. Blue accepts only the configured guild/channel and optional user allowlist. The bot token stays in memory and is never saved.</p>
       <label class="field-label">Application ID
@@ -358,7 +440,7 @@
       <pre id="discordStatus">Discord add-on is disconnected.</pre>
       <p class="hint">Create the bot in Discord's Developer Portal and invite it to your server. Do not paste the token into chat, files, screenshots, or source code.</p>
     </section>
-    <section data-panel="security" hidden>
+    <section data-panel="systems" data-editor="security" hidden>
       <h2>Windows Security Center</h2>
       <p class="hint">Blue manually reads Microsoft Defender, Windows Firewall, registered antivirus products, recent threat detections, and startup-entry names. It does not run a scan, quarantine files, modify startup, or change security settings.</p>
       <div class="security-summary">
@@ -371,7 +453,17 @@
       <pre id="securityDetails">Choose Read Security Status for a manual, read-only snapshot.</pre>
       <p class="hint">Blue is not an antivirus engine and cannot guarantee that a computer is malware-free. Use Windows Security or your installed security provider for scanning and remediation.</p>
     </section>
-    <section data-panel="system" hidden>
+    <section data-panel="tools" data-editor="diagnostics" hidden>
+      <h2>Tools and Diagnostics</h2>
+      <div class="grid">
+        <button id="devRunAudit">Run Function Audit</button>
+        <button id="devRunDoctor">Run Blue Doctor</button>
+        <button id="devSystemInfo">PC and Display Info</button>
+        <button id="devOpenProject">Open Blue Folder</button>
+        <button id="devFocusDiagnostics" class="secondary">Focus Diagnostics</button>
+        <button id="devSecurityScan" class="secondary">Read Security Status</button>
+        <button id="devBlueMeshCheck" class="secondary">Check BlueMesh</button>
+      </div>
       <h2>Safe PC Help</h2>
       <div class="artifact-preview">
         <h2>Away and Autonomy Rules</h2>
@@ -461,14 +553,41 @@
       </div>
       <pre id="status">Blue only performs bounded, visible actions. Project changes remain approval-gated.</pre>
     </section>
+    <section data-panel="mesh" data-editor="identity" hidden>
+      <h2>BlueMesh Shared Identity</h2>
+      <p class="hint">BlueMesh keeps one Blue identity across trusted creator PCs. Sync is approval-gated and does not copy secrets.</p>
+      <div class="grid"><button id="blueMeshCheck">Check BlueMesh</button><button id="blueMeshToken">Make Pairing Token</button><button id="blueMeshSmoke">Run LAN Smoke Test</button><button id="blueMeshOpenDocs" class="secondary">Open BlueMesh Docs</button><button data-open-editor="sync" class="secondary">Open Sync</button><button data-open-editor="nodes" class="secondary">Trusted Nodes</button><button data-open-editor="conflicts" class="secondary">Conflicts</button></div>
+    </section>
+    <section data-panel="mesh" data-editor="nodes" hidden><h2>Trusted Nodes</h2><pre>Register trusted creator PCs here.</pre></section>
+    <section data-panel="mesh" data-editor="sync" hidden><h2>Sync</h2><div class="grid"><button id="blueMeshCopyServer" class="secondary">Copy Receiver Server Command</button><button id="blueMeshCopyPush" class="secondary">Copy Push Command</button></div><pre id="blueMeshDetails">LAN/Wi-Fi sync tools and bundle import/export status live here.</pre></section>
+    <section data-panel="mesh" data-editor="conflicts" hidden><h2>Conflicts</h2><pre>Conflicts are reported here instead of overwriting shared memory.</pre></section>
+    <section data-panel="mesh" data-editor="ledger" hidden><h2>Ledger</h2><pre>Append-only BlueMesh changes appear here.</pre></section>
+    <section data-panel="settings" data-editor="settings" hidden><h2>Settings</h2><p class="hint">Layout, startup, model, privacy, and path preferences live here.</p><div class="grid"><button id="settingsOpenProject">Open Blue Folder</button><button id="settingsRunAudit" class="secondary">Run Function Audit</button></div></section>
+    </div>
   </main>
+  <section id="bottomPanel" class="bottom-panel" hidden>
+    <div class="bottom-tabs" role="tablist">
+      <button data-bottom-tab="output" class="active">Output</button>
+      <button data-bottom-tab="problems">Problems</button>
+      <button data-bottom-tab="activity">Activity Log</button>
+      <button data-bottom-tab="security">Security Log</button>
+      <button data-bottom-tab="mesh">BlueMesh Log</button>
+      <button data-bottom-tab="streaming">Streaming Log</button>
+    </div>
+    <div class="bottom-content"><pre id="bottomPanelOutput">Bottom panel is ready. It stays closed until a command opens it.</pre></div>
+  </section>
   <footer class="workbench-status" aria-live="polite">
     <span id="footerConversation">Conversation: Blue Desktop Pet</span>
     <span>Local mode</span>
+    <span id="footerModel">Model: local/foundation</span>
+    <span id="footerBlueMesh">BlueMesh: installed</span>
     <span id="footerDiscord">Discord: disconnected</span>
+    <span id="footerObs">OBS: disconnected</span>
     <span id="footerSecurity">Security: not scanned</span>
-    <span>Vision off</span>
+    <span id="footerMicrophone">Microphone: off</span>
+    <span id="footerVision">Vision: off</span>
   </footer>
+  <script src="ui/shell/app-shell.js"></script>
   <script src="control.js"></script>
 </body>
 </html>

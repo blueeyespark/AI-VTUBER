@@ -81,20 +81,20 @@ local Ollama model; Blue never downloads or activates one silently.
 
 ## Make Blue appear on the desktop
 
-From the `ai blue project` folder:
+From the repository root:
 
 ```powershell
-.\open_blue.cmd
+.\START_BLUE.cmd
 ```
 
-The desktop companion uses Blue's real persistent conversation database. It
+The desktop/control-center companion uses Blue's real persistent conversation database. It
 provides visible chat, a trusted-file learning picker, cited Academy commands,
 and approval-gated `/make` proposals.
 
-For the full VRM desktop-pet body, run from the `ai blue project` folder:
+The same root launcher opens the current full desktop/control-center experience:
 
 ```powershell
-.\open_blue_3d.cmd
+.\START_BLUE.ps1
 ```
 
 The 3D body is a transparent, frameless, always-on-top Electron window using

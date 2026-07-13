@@ -1,20 +1,20 @@
-{
-  "name": "project-blue-desktop-pet",
-  "version": "2.3.0",
-  "private": true,
-  "main": "main.cjs",
-  "scripts": {
-    "start": "electron .",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check control.js && node --check pet-renderer.js && node --check motion-core.mjs && node --check locomotion-core.cjs && node --check presence-core.cjs && node --check runtime-guards.cjs && node --check process-runner.cjs && node --check discord-addon.cjs",
-    "test": "node --test test/*.test.cjs"
-  },
-  "dependencies": {
-    "@pixiv/three-vrm": "latest",
-    "pixi-live2d-display": "^0.4.0",
-    "pixi.js": "^6.5.10",
-    "three": "latest"
-  },
-  "devDependencies": {
-    "electron": "latest"
-  }
+﻿{
+    "name":  "project-blue-desktop-pet",
+    "version":  "2.3.0",
+    "private":  true,
+    "main":  "main.cjs",
+    "scripts":  {
+                    "start":  "electron .",
+                    "check":  "node --check main.cjs \u0026\u0026 node --check preload.cjs \u0026\u0026 node --check control.js \u0026\u0026 node --check control-audit.cjs \u0026\u0026 node --check pet-renderer.js \u0026\u0026 node --check motion-core.mjs \u0026\u0026 node --check locomotion-core.cjs \u0026\u0026 node --check presence-core.cjs \u0026\u0026 node --check runtime-guards.cjs \u0026\u0026 node --check process-runner.cjs \u0026\u0026 node --check discord-addon.cjs \u0026\u0026 node --check streaming-core.cjs \u0026\u0026 node --check companion_engine/geometry.cjs \u0026\u0026 node --check companion_engine/emotion-state.cjs \u0026\u0026 node --check companion_engine/animation-state-machine.cjs \u0026\u0026 node --check companion_engine/movement-controller.cjs \u0026\u0026 node --check companion_engine/safety-controller.cjs \u0026\u0026 node --check companion_engine/habit-memory.cjs \u0026\u0026 node --check companion_engine/behavior-planner.cjs \u0026\u0026 node --check companion_engine/model-profile.cjs \u0026\u0026 node --check companion_engine/debug-inspector.cjs \u0026\u0026 node --check companion_engine/desktop-companion-engine.cjs",
+                    "test":  "node --test test/*.test.cjs"
+                },
+    "dependencies":  {
+                         "@pixiv/three-vrm":  "latest",
+                         "pixi-live2d-display":  "^0.4.0",
+                         "pixi.js":  "^6.5.10",
+                         "three":  "latest"
+                     },
+    "devDependencies":  {
+                            "electron":  "latest"
+                        }
 }

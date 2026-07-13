@@ -1,0 +1,79 @@
+﻿{
+    "archived_at":  "2026-07-10T09:47:13.7450593-06:00",
+    "source_deleted_after_verification":  "C:\\Users\\adahn\\Downloads\\AI-VTUBER-main\\AI-VTUBER-main\\Project Blue Data Center\\08_SOURCE_ARCHIVE\\MINECRAFT_BUTCHERY_BLUE_LEFTOVERS_20260709",
+    "target_archive":  "C:\\Users\\adahn\\Downloads\\AI-VTUBER-main\\AI-VTUBER-main\\Project Blue Data Center\\08_SOURCE_ARCHIVE\\BLUE_LEGACY_PATCH_SCRIPTS_20260710",
+    "file_count":  14,
+    "total_bytes":  470484,
+    "files":  [
+                  {
+                      "relative_path":  "apply_blue_sync_ui.ps1",
+                      "bytes":  10751,
+                      "sha256":  "FEE9A4E21EFC586872B58DEC2E3D8504931DE9567EA8083FF8DE99B96A4AEB78"
+                  },
+                  {
+                      "relative_path":  "blue_shared_upgrade_sync.patch",
+                      "bytes":  30084,
+                      "sha256":  "74018F5ED3C40B46B88F8E3745FE1D0390E6DA9598AED19DDA3F192F85434C0A"
+                  },
+                  {
+                      "relative_path":  "finish_blue_control_close_regex.ps1",
+                      "bytes":  795,
+                      "sha256":  "10C02071452249AA8615FF1B0825150600497CA939AD3F74481C7A6A688353EE"
+                  },
+                  {
+                      "relative_path":  "finish_blue_sticky_close.ps1",
+                      "bytes":  1032,
+                      "sha256":  "A91274783F40D299C2CCE9F0154FDF6B0D84ABBBAC5BC69B7EC50B6927B48F71"
+                  },
+                  {
+                      "relative_path":  "finish_blue_sync_docs.ps1",
+                      "bytes":  2312,
+                      "sha256":  "CE8B0530FE490FA4F61E15AFCCE556A058965F6676DC7A542531A0629D0765EC"
+                  },
+                  {
+                      "relative_path":  "fix_blue_sticky_close.patch",
+                      "bytes":  4451,
+                      "sha256":  "E67760046D59110E2A7BE78D5D7DA4198343FFCECD2C51BEA8C2F58D01802EF7"
+                  },
+                  {
+                      "relative_path":  "fix_blue_sticky_close.ps1",
+                      "bytes":  3337,
+                      "sha256":  "4F1326102159D9717EBC1C1E001FE6F083C21FCBB3DF073D602A2E71FAE166B4"
+                  },
+                  {
+                      "relative_path":  "fix_blue_zip_lfs_and_mojibake.ps1",
+                      "bytes":  3184,
+                      "sha256":  "66541765F8FD024E6AD07FC3976D48C3A881A9F197B75FE1FAB299167A653765"
+                  },
+                  {
+                      "relative_path":  "fix_sync_icon_encoding.ps1",
+                      "bytes":  445,
+                      "sha256":  "C329CD020CF9CD449921FEE555FD99F6C77B67157A84A385E554376FCF66D507"
+                  },
+                  {
+                      "relative_path":  "fix_upgrade_sync_tail.ps1",
+                      "bytes":  2864,
+                      "sha256":  "476B45B7BCBD7E4ECF893E39255EACA167CB0D8FD9C7ECB2DE4B7DAF7E4AD742"
+                  },
+                  {
+                      "relative_path":  "fix_upgrade_sync_test_tail.ps1",
+                      "bytes":  939,
+                      "sha256":  "3FB37D03D6CC7054929390F5C45FF6AF1FBB8AB48ED5E5C094C663E0F2A6711E"
+                  },
+                  {
+                      "relative_path":  "install_bluemesh.ps1",
+                      "bytes":  57847,
+                      "sha256":  "9A9E3FAD4D0E279BDCA2E8EB9B1F32678398FD75E97434A649418577BB17AFA1"
+                  },
+                  {
+                      "relative_path":  ".blue\\blue.db",
+                      "bytes":  352256,
+                      "sha256":  "C94417F37761FC61FF84E53C7CC09B0BD30E57C893382B2A3BF2DAB075E0DE33"
+                  },
+                  {
+                      "relative_path":  ".blue\\config.json",
+                      "bytes":  187,
+                      "sha256":  "22B0D3A84EB13E37CE9C881FC30569454594BED5789BA1BABD57AC110294B84A"
+                  }
+              ]
+}

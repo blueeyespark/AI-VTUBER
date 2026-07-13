@@ -1,27 +1,45 @@
-# Start Project Blue Here
+﻿# Start Project Blue Here
 
-Project Blue now has two working parts:
+Project Blue has two main areas:
 
-- `Project Blue Data Center` — the organized source of truth and engineering plan.
-- `Project Blue App` — the first executable local core.
+- `Project Blue App` - the executable local AI companion, control center, and desktop avatar.
+- `Project Blue Data Center` - the organized source of truth, engineering plan, status, research, and roadmap.
 
-## Run Blue
+## Start Blue normally
 
-Open a terminal in `Project Blue App`, then run:
+From this repository root, run:
 
 ```powershell
+.\START_BLUE.ps1
+```
+
+Or double-click:
+
+```text
+START_BLUE.cmd
+```
+
+That is the main launcher for the desktop/control-center app.
+
+## Disable startup
+
+If Blue is starting with Windows and you want to turn that off, run:
+
+```text
+DISABLE_STARTUP.cmd
+```
+
+## Command-line tools
+
+The app-internal command launchers still live in `Project Blue App/`:
+
+```powershell
+cd "Project Blue App"
 .\run_blue.cmd status
 .\run_blue.cmd chat "What can you do right now?"
-.\run_blue.cmd remember "Title" "Information Blue should remember."
-.\run_blue.cmd recall "search words"
 .\run_blue.cmd doctor
 ```
 
-The current offline provider supports Blue's identity, Constitution, memory,
-policy, auditing, backup, export, and diagnostics. Connect a local Ollama model
-later for generated conversation.
+## Launcher organization
 
-## Current boundary
-
-This is a tested Phase 1 foundation. It does not yet control the desktop, publish
-content, spend money, access private accounts, or operate hardware.
+Old root launchers were moved to `tools/launchers/legacy_root_launchers/` as backups. The root now uses the clearer launcher names above.

@@ -49,73 +49,338 @@ let lastOcrText = "";
 let vtuberModels = [];
 let selectedStartupModel = "";
 let pendingDeepResearchTopic = "";
-const validTabs = new Set([
-  "chat", "share", "voice", "presence", "create", "expansion", "motion", "discord", "security", "system"
-]);
-const tabOrder = [
-  "chat", "share", "voice", "presence", "create", "expansion", "motion", "discord", "security", "system"
-];
+const shell = window.ProjectBlueShell;
+const activityBar = document.querySelector("#activityBar");
+const contextSidebar = document.querySelector("#contextSidebar");
+const sidebarContent = contextSidebar?.querySelector(".sidebar-content");
+const sidebarTitle = contextSidebar?.querySelector(".sidebar-title");
+const editorTabs = document.querySelector("#editorTabs");
+const bottomPanel = document.querySelector("#bottomPanel");
+const bottomPanelOutput = document.querySelector("#bottomPanelOutput");
+const blueContextPanel = document.querySelector("#blueContextPanel");
+const blueContextCollapse = document.querySelector("#blueContextCollapse");
+const chatMoreActions = document.querySelector("#chatMoreActions");
+const chatMoreMenu = document.querySelector("#chatMoreMenu");
+const attachmentChips = document.querySelector("#attachmentChips");
+if (localStorage.getItem("blueFinalUiPassTabsInitialized") !== "true") {
+  localStorage.setItem("blueOpenEditors:workspace", "blue-chat");
+  localStorage.setItem("blueEditor:workspace", "blue-chat");
+  localStorage.setItem("blueFinalUiPassTabsInitialized", "true");
+}
+const layoutState = {
+  activeActivity: shell?.normalizeActivity(localStorage.getItem("blueControlActivity") || localStorage.getItem("blueControlTab") || "workspace") || "workspace",
+  activeEditors: {},
+  openEditors: {},
+  bottomOpen: localStorage.getItem("blueBottomPanelOpen") === "true",
+  bottomTab: localStorage.getItem("blueBottomPanelTab") || "output",
+  contextCollapsed: localStorage.getItem("blueContextCollapsed") === "true"
+};
 
-function selectTab(value) {
-  const tab = validTabs.has(value) ? value : "chat";
+function allActivityEditors(activityId) {
+  return shell?.editors?.[activityId] || [];
+}
+
+function readOpenEditorIds(activityId) {
+  const saved = localStorage.getItem(`blueOpenEditors:${activityId}`);
+  const allowed = new Set(allActivityEditors(activityId).map(editor => editor.id));
+  const fallback = [shell?.defaultEditor(activityId) || "blue-chat"];
+  const ids = saved ? saved.split(",").filter(id => allowed.has(id)) : [];
+  return ids.length ? ids : fallback;
+}
+
+function getOpenEditorIds(activityId = layoutState.activeActivity) {
+  if (!layoutState.openEditors[activityId]) layoutState.openEditors[activityId] = readOpenEditorIds(activityId);
+  return layoutState.openEditors[activityId];
+}
+
+function persistOpenEditors(activityId) {
+  localStorage.setItem(`blueOpenEditors:${activityId}`, getOpenEditorIds(activityId).join(","));
+}
+
+function ensureEditorOpen(activityId, editorId) {
+  const allowed = new Set(allActivityEditors(activityId).map(editor => editor.id));
+  const normalized = allowed.has(editorId) ? editorId : shell?.defaultEditor(activityId) || "blue-chat";
+  const openIds = getOpenEditorIds(activityId);
+  if (!openIds.includes(normalized)) {
+    openIds.push(normalized);
+    persistOpenEditors(activityId);
+  }
+  return normalized;
+}
+
+function getActivityEditors(activityId) {
+  const openIds = new Set(getOpenEditorIds(activityId));
+  return allActivityEditors(activityId).filter(editor => openIds.has(editor.id));
+}
+
+function currentEditor(activityId = layoutState.activeActivity) {
+  const saved = layoutState.activeEditors[activityId] || localStorage.getItem(`blueEditor:${activityId}`) || shell?.defaultEditor(activityId) || "blue-chat";
+  return ensureEditorOpen(activityId, saved);
+}
+
+function renderActivityBar() {
+  if (!activityBar || !shell) return;
+  activityBar.replaceChildren();
+  for (const activity of shell.activities) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.activity = activity.id;
+    button.title = activity.label;
+    button.setAttribute("aria-label", activity.label);
+    button.setAttribute("aria-selected", String(activity.id === layoutState.activeActivity));
+    button.innerHTML = activity.icon;
+    button.onclick = () => selectTab(activity.id);
+    activityBar.append(button);
+  }
+}
+
+function renderSidebar() {
+  if (!contextSidebar || !sidebarContent || !shell) return;
+  const activity = shell.activities.find(item => item.id === layoutState.activeActivity);
+  sidebarTitle.textContent = layoutState.activeActivity === "workspace" ? "Explorer" : (activity?.label || "Workspace");
+  sidebarContent.replaceChildren();
+  const editors = getActivityEditors(layoutState.activeActivity);
+  const open = document.createElement("div");
+  open.className = "tree-section";
+  open.innerHTML = `<div class="tree-heading">Open Editors</div>`;
+  for (const editor of editors) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `tree-row${editor.id === currentEditor() ? " active" : ""}`;
+    row.textContent = editor.title;
+    row.onclick = () => selectTab(layoutState.activeActivity, editor.id);
+    open.append(row);
+  }
+  sidebarContent.append(open);
+  const items = (shell.sidebarItems?.[layoutState.activeActivity] || []).filter(item => item.toLowerCase() !== "open editors");
+  const section = document.createElement("div");
+  section.className = "tree-section";
+  section.innerHTML = `<div class="tree-heading">${activity?.label || "Tools"}</div>`;
+  for (const item of items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "tree-row";
+    row.textContent = item;
+    row.onclick = () => openSidebarItem(item);
+    section.append(row);
+  }
+  sidebarContent.append(section);
+}
+
+function renderEditorTabs() {
+  if (!editorTabs) return;
+  editorTabs.replaceChildren();
+  for (const editor of getActivityEditors(layoutState.activeActivity)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `editor-tab${editor.id === currentEditor() ? " active" : ""}`;
+    button.dataset.editor = editor.id;
+    button.innerHTML = `<span>${editor.title}</span>${editor.closable ? '<span class="editor-close" aria-hidden="true">x</span>' : ''}`;
+    button.onclick = event => {
+      if (event.target.classList.contains("editor-close")) {
+        closeEditor(editor.id);
+      } else {
+        selectTab(layoutState.activeActivity, editor.id);
+      }
+    };
+    button.onauxclick = event => { if (event.button === 1) closeEditor(editor.id); };
+    button.oncontextmenu = event => {
+      event.preventDefault();
+      const action = window.prompt("Tab action: close, close others, close right, pin", "close");
+      handleTabAction(editor.id, action);
+    };
+    editorTabs.append(button);
+  }
+}
+
+function closeEditor(editorId) {
+  const activity = layoutState.activeActivity;
+  const editor = allActivityEditors(activity).find(item => item.id === editorId);
+  if (!editor?.closable) return;
+  const openIds = getOpenEditorIds(activity);
+  const index = openIds.indexOf(editorId);
+  if (index >= 0) openIds.splice(index, 1);
+  if (!openIds.length) openIds.push(shell.defaultEditor(activity));
+  if (currentEditor(activity) === editorId) layoutState.activeEditors[activity] = openIds[Math.max(0, index - 1)] || openIds[0];
+  persistOpenEditors(activity);
+  renderShell();
+  selectTab(activity, layoutState.activeEditors[activity]);
+}
+
+function handleTabAction(editorId, action) {
+  const activity = layoutState.activeActivity;
+  const normalized = String(action || "").toLowerCase();
+  const openIds = getOpenEditorIds(activity);
+  const index = openIds.indexOf(editorId);
+  if (normalized.includes("other")) {
+    layoutState.openEditors[activity] = openIds.filter(id => id === editorId || !allActivityEditors(activity).find(editor => editor.id === id)?.closable);
+    layoutState.activeEditors[activity] = editorId;
+  } else if (normalized.includes("right") && index >= 0) {
+    layoutState.openEditors[activity] = openIds.filter((id, itemIndex) => itemIndex <= index || !allActivityEditors(activity).find(editor => editor.id === id)?.closable);
+  } else if (normalized.includes("pin")) {
+    const editor = allActivityEditors(activity).find(item => item.id === editorId);
+    if (editor) editor.closable = false;
+  } else if (normalized.includes("close")) {
+    closeEditor(editorId);
+    return;
+  }
+  persistOpenEditors(activity);
+  renderShell();
+}
+
+function showBottomPanel(tab = layoutState.bottomTab) {
+  layoutState.bottomOpen = true;
+  layoutState.bottomTab = tab;
+  localStorage.setItem("blueBottomPanelOpen", "true");
+  localStorage.setItem("blueBottomPanelTab", tab);
+  document.body.classList.add("bottom-open");
+  if (bottomPanel) bottomPanel.hidden = false;
+  for (const button of document.querySelectorAll("[data-bottom-tab]")) button.classList.toggle("active", button.dataset.bottomTab === tab);
+  if (bottomPanelOutput) bottomPanelOutput.textContent = `${tab} panel ready.`;
+}
+
+function hideBottomPanel() {
+  layoutState.bottomOpen = false;
+  localStorage.setItem("blueBottomPanelOpen", "false");
+  document.body.classList.remove("bottom-open");
+  if (bottomPanel) bottomPanel.hidden = true;
+}
+
+function renderBottomPanel() {
+  if (layoutState.bottomOpen) showBottomPanel(layoutState.bottomTab);
+  else hideBottomPanel();
+}
+
+function selectTab(value, editorValue) {
+  const activity = shell?.normalizeActivity(value) || "workspace";
+  const editor = ensureEditorOpen(activity, shell?.normalizeEditor(activity, editorValue || value) || "blue-chat");
+  layoutState.activeActivity = activity;
+  layoutState.activeEditors[activity] = editor;
+  localStorage.setItem("blueControlActivity", activity);
+  localStorage.setItem(`blueEditor:${activity}`, editor);
   for (const panel of document.querySelectorAll("[data-panel]")) {
-    panel.hidden = panel.dataset.panel !== tab;
+    const matchesActivity = panel.dataset.panel === activity;
+    const panelEditor = panel.dataset.editor || editor;
+    const matchesEditor = panelEditor === editor;
+    const active = matchesActivity && matchesEditor;
+    panel.hidden = !active;
+    panel.classList.toggle("active-editor", active);
   }
-  for (const button of document.querySelectorAll("[data-tab]")) {
-    const selected = button.dataset.tab === tab;
-    button.setAttribute("aria-selected", String(selected));
-    if (selected) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  }
-  localStorage.setItem("blueControlTab", tab);
-  document.querySelector("main")?.scrollTo({ top: 0, behavior: "auto" });
+  renderShell();
+  updateBlueContext();
+  document.querySelector(".editor-surface")?.scrollTo({ top: 0, behavior: "auto" });
 }
 
-for (const button of document.querySelectorAll("[data-tab]")) {
-  button.onclick = () => selectTab(button.dataset.tab);
+function renderShell() {
+  renderActivityBar();
+  renderSidebar();
+  renderEditorTabs();
+  renderBottomPanel();
 }
-selectTab(localStorage.getItem("blueControlTab") || "chat");
+
+function openSidebarItem(label) {
+  const text = String(label || "").toLowerCase();
+  if (text.includes("conversation") || text.includes("editor") || text.includes("chat")) return selectTab("workspace", "blue-chat");
+  if (text.includes("research") || text.includes("learning")) return selectTab("workspace", "research-lab");
+  if (text.includes("idea")) return selectTab("workspace", "idea-lab");
+  if (text.includes("file") || text.includes("image") || text.includes("folder") || text.includes("ocr")) return selectTab("workspace", "file-preview");
+  if (text.includes("voice") || text.includes("microphone")) return selectTab("ai", "voice");
+  if (text.includes("avatar")) return selectTab("ai", "avatar");
+  if (text.includes("movement")) return selectTab("ai", "movement");
+  if (text.includes("local ai")) return selectTab("ai", "local-ai");
+  if (text.includes("security")) return selectTab("systems", "security");
+  if (text.includes("hardware")) return selectTab("systems", "hardware");
+  if (text.includes("function")) return selectTab("systems", "function-health");
+  if (text.includes("diagnostic")) return selectTab("tools", "diagnostics");
+  if (text.includes("doctor")) return selectTab("tools", "blue-doctor");
+  if (text.includes("pc info")) return selectTab("tools", "pc-actions");
+  if (text.includes("obs") || text.includes("scene")) return selectTab("streaming", "obs");
+  if (text.includes("platform")) return selectTab("streaming", "platforms");
+  if (text.includes("moderation")) return selectTab("streaming", "moderation");
+  if (text.includes("discord") || text.includes("command") || text.includes("allowed")) return selectTab("discord", "connection");
+  if (text.includes("node")) return selectTab("mesh", "nodes");
+  if (text.includes("sync") || text.includes("pairing")) return selectTab("mesh", "sync");
+  if (text.includes("conflict")) return selectTab("mesh", "conflicts");
+  if (text.includes("ledger")) return selectTab("mesh", "ledger");
+}
+
+for (const button of document.querySelectorAll("[data-open-activity]")) {
+  button.onclick = () => selectTab(button.dataset.openActivity, button.dataset.openEditor);
+}
+for (const button of document.querySelectorAll("[data-open-editor]")) {
+  button.onclick = () => selectTab(layoutState.activeActivity, button.dataset.openEditor);
+}
+for (const button of document.querySelectorAll("[data-bottom-tab]")) {
+  button.onclick = () => showBottomPanel(button.dataset.bottomTab);
+}
+selectTab(layoutState.activeActivity, localStorage.getItem(`blueEditor:${layoutState.activeActivity}`));
+
+function updateBlueContext() {
+  const set = (id, value) => { const element = document.querySelector(`#${id}`); if (element) element.textContent = value || "Not available"; };
+  set("ctxGoal", layoutState.activeActivity === "workspace" ? "Work with Blue" : shell?.activities?.find(item => item.id === layoutState.activeActivity)?.label || "Idle");
+  set("ctxTask", allActivityEditors(layoutState.activeActivity).find(editor => editor.id === currentEditor())?.title || "None selected");
+  set("ctxProject", "Project Blue");
+  set("ctxFile", currentEditor() ? `${currentEditor()}.editor` : "None selected");
+  set("ctxMemory", conversationSelect?.selectedOptions?.[0]?.textContent || "Not available");
+  set("ctxSuggestions", layoutState.activeActivity === "workspace" ? "Use More Actions for research, OCR, and ideas" : "Idle");
+  set("ctxServices", `BlueMesh ${document.querySelector("#footerBlueMesh")?.textContent || "unknown"}; Discord ${footerDiscord?.textContent || "unknown"}; OBS ${document.querySelector("#footerObs")?.textContent || "unknown"}`);
+  set("ctxConfidence", "Not available");
+  set("ctxApprovals", "None");
+  document.body.classList.toggle("context-collapsed", layoutState.contextCollapsed);
+}
+
+function toggleMoreMenu(force) {
+  if (!chatMoreMenu || !chatMoreActions) return;
+  const show = typeof force === "boolean" ? force : chatMoreMenu.hidden;
+  chatMoreMenu.hidden = !show;
+  chatMoreActions.setAttribute("aria-expanded", String(show));
+}
+
+chatMoreActions?.addEventListener("click", event => {
+  event.stopPropagation();
+  toggleMoreMenu();
+});
+window.addEventListener("click", event => {
+  if (chatMoreMenu && !chatMoreMenu.hidden && !event.target.closest(".more-menu-wrap")) toggleMoreMenu(false);
+});
+chatMoreMenu?.addEventListener("click", event => { if (event.target.closest("button")) toggleMoreMenu(false); });
+blueContextCollapse?.addEventListener("click", () => {
+  layoutState.contextCollapsed = !layoutState.contextCollapsed;
+  localStorage.setItem("blueContextCollapsed", String(layoutState.contextCollapsed));
+  updateBlueContext();
+});
+updateBlueContext();
 
 const commandActions = [
-  { terms: ["new conversation", "new chat"], run: () => {
-    selectTab("chat");
-    document.querySelector("#newConversationName").focus();
-  } },
-  { terms: ["chat", "talk"], run: () => selectTab("chat") },
-  { terms: ["share", "paste", "drop", "clipboard", "files", "images", "ocr", "scan image"], run: () => selectTab("share") },
-  { terms: ["voice", "wake", "listen", "owner phrase", "qwen"], run: () => selectTab("voice") },
-  { terms: ["presence", "privacy"], run: () => selectTab("presence") },
-  { terms: ["create", "idea", "lab"], run: () => selectTab("create") },
-  { terms: ["expansion", "finance", "robotics", "mobile", "network", "world model"], run: () => selectTab("expansion") },
-  { terms: ["movement", "motion", "expressions"], run: () => selectTab("motion") },
-  { terms: ["discord"], run: () => selectTab("discord") },
-  { terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("security") },
-  { terms: ["system", "health", "doctor"], run: () => selectTab("system") },
-  { terms: ["latest result", "show result", "preview result", "artifact"], run: () => {
-    selectTab("system");
-    loadCurrentArtifact();
-  } },
-  { terms: ["share files", "files"], run: () => {
-    selectTab("share");
-    document.querySelector("#files").click();
-  } },
-  { terms: ["scan image", "ocr", "image text"], run: () => {
-    selectTab("share");
-    document.querySelector("#scanImage").click();
-  } }
+  { terms: ["new conversation", "new chat"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#newConversationName").focus(); } },
+  { terms: ["workspace", "chat", "talk"], run: () => selectTab("workspace", "blue-chat") },
+  { terms: ["research", "learning", "deep research"], run: () => selectTab("workspace", "research-lab") },
+  { terms: ["idea", "lab", "create"], run: () => selectTab("workspace", "idea-lab") },
+  { terms: ["files", "images", "folder", "ocr", "scan image"], run: () => selectTab("workspace", "file-preview") },
+  { terms: ["voice", "wake", "listen", "microphone"], run: () => selectTab("ai", "voice") },
+  { terms: ["presence", "privacy"], run: () => selectTab("ai", "presence") },
+  { terms: ["movement", "motion", "avatar", "expressions"], run: () => selectTab("ai", "avatar") },
+  { terms: ["local ai", "model", "ollama"], run: () => selectTab("ai", "local-ai") },
+  { terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("systems", "security") },
+  { terms: ["system", "health", "doctor", "diagnostics"], run: () => selectTab("tools", "diagnostics") },
+  { terms: ["obs", "stream", "streaming", "scenes"], run: () => selectTab("streaming", "streaming-studio") },
+  { terms: ["discord"], run: () => selectTab("discord", "connection") },
+  { terms: ["bluemesh", "mesh", "sync", "nodes"], run: () => selectTab("mesh", "identity") },
+  { terms: ["output", "problems", "activity log", "security log"], run: () => showBottomPanel("output") },
+  { terms: ["latest result", "show result", "preview result", "artifact"], run: () => { selectTab("workspace", "generated-result"); loadCurrentArtifact(); } },
+  { terms: ["share files"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#files").click(); } },
+  { terms: ["scan image", "image text"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#scanImage").click(); } }
 ];
 
 function runCommand(value) {
-  const query = String(value || "").trim().toLowerCase();
+  const query = String(value || "").trim().replace(/^>/, "").toLowerCase();
   if (!query) return;
-  const command = commandActions.find(item =>
-    item.terms.some(term => term === query || term.includes(query) || query.includes(term))
-  );
+  const command = commandActions.find(item => item.terms.some(term => term === query || term.includes(query) || query.includes(term)));
   if (command) {
     command.run();
     commandSearch.value = "";
   } else {
-    append("blue", `No control matched “${value}”. Try Chat, Motion, Security, or System.`);
+    append("blue", `No control matched "${value}". Try Workspace, Research, Streaming, BlueMesh, Security, or Tools.`);
   }
 }
 
@@ -249,12 +514,25 @@ async function loadOutfitReference() {
 }
 
 function append(who, text) {
-  const p = document.createElement("p");
-  const b = document.createElement("b");
-  b.textContent = `${who}> `;
-  p.append(b, document.createTextNode(text));
-  messages.append(p);
+  const group = document.createElement("div");
+  const normalized = String(who || "blue").toLowerCase();
+  group.className = `message-group ${normalized === "you" || normalized === "user" ? "user-message" : "blue-message"}`;
+  const avatar = document.createElement("div");
+  avatar.className = "message-avatar";
+  avatar.textContent = normalized === "you" || normalized === "user" ? "You" : normalized === "history" ? "H" : "B";
+  const body = document.createElement("div");
+  body.className = "message-body";
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.textContent = `${normalized === "you" ? "You" : normalized === "history" ? "History" : "Blue"} ? ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  const content = document.createElement("div");
+  content.className = "message-content";
+  content.textContent = text;
+  body.append(meta, content);
+  group.append(avatar, body);
+  messages.append(group);
   messages.scrollTop = messages.scrollHeight;
+  updateBlueContext();
 }
 
 function modelKindLabel(model) {
@@ -778,7 +1056,7 @@ document.querySelector("#openMicSettings").onclick = async () => {
     append("blue", `Could not open microphone settings: ${error.message}`);
   }
 };
-prompt.onkeydown = event => { if (event.key === "Enter") send(); };
+prompt.onkeydown = event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } };
 document.querySelector("#pasteSend").onclick = sendPasted;
 pasteBox.onkeydown = event => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendPasted();
@@ -1577,3 +1855,127 @@ window.bluePet.discordStatus().then(showDiscordStatus)
 loadVtuberModels(true);
 showOllamaSetupIfNeeded();
 refreshExpansion();
+
+
+function setWorkbenchOutput(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const status = document.querySelector("#status");
+  const bottom = document.querySelector("#bottomPanelOutput");
+  if (status) status.textContent = text;
+  if (bottom) bottom.textContent = text;
+  return text;
+}
+
+const rebuiltButtonElements = {
+  chatRunAudit: document.querySelector("#chatRunAudit"),
+  chatToolPaste: document.querySelector("#chatToolPaste"),
+  chatToolOcr: document.querySelector("#chatToolOcr"),
+  chatAttachFiles: document.querySelector("#chatAttachFiles"),
+  chatAttachImages: document.querySelector("#chatAttachImages"),
+  chatAttachFolder: document.querySelector("#chatAttachFolder"),
+  chatPasteClipboard: document.querySelector("#chatPasteClipboard"),
+  chatScanImage: document.querySelector("#chatScanImage"),
+  chatToolIdea: document.querySelector("#chatToolIdea"),
+  chatToolLearn: document.querySelector("#chatToolLearn"),
+  chatToolResearch: document.querySelector("#chatToolResearch"),
+  chatToolAgent: document.querySelector("#chatToolAgent"),
+  devRunAudit: document.querySelector("#devRunAudit"),
+  devRunDoctor: document.querySelector("#devRunDoctor"),
+  devSystemInfo: document.querySelector("#devSystemInfo"),
+  devOpenProject: document.querySelector("#devOpenProject"),
+  devFocusDiagnostics: document.querySelector("#devFocusDiagnostics"),
+  devSecurityScan: document.querySelector("#devSecurityScan"),
+  devBlueMeshCheck: document.querySelector("#devBlueMeshCheck"),
+  streamingStatusRefresh: document.querySelector("#streamingStatusRefresh"),
+  streamingObsSave: document.querySelector("#streamingObsSave"),
+  streamingObsCheck: document.querySelector("#streamingObsCheck"),
+  streamingObsSceneRefresh: document.querySelector("#streamingObsSceneRefresh"),
+  streamingObsCaptureGuide: document.querySelector("#streamingObsCaptureGuide"),
+  streamingObsSceneSwitch: document.querySelector("#streamingObsSceneSwitch"),
+  streamingSavePlatform: document.querySelector("#streamingSavePlatform"),
+  streamingChatReadiness: document.querySelector("#streamingChatReadiness"),
+  streamingRulesCheck: document.querySelector("#streamingRulesCheck"),
+  streamingModerationPlan: document.querySelector("#streamingModerationPlan"),
+  streamingToggleVrm: document.querySelector("#streamingToggleVrm"),
+  streamingToggleLive2d: document.querySelector("#streamingToggleLive2d"),
+  streamingToggleWarudo: document.querySelector("#streamingToggleWarudo"),
+  streamingVoiceSafety: document.querySelector("#streamingVoiceSafety"),
+  streamingVoiceTest: document.querySelector("#streamingVoiceTest"),
+  streamingIndependencePlan: document.querySelector("#streamingIndependencePlan"),
+  streamingGoLiveChecklist: document.querySelector("#streamingGoLiveChecklist"),
+  blueMeshCheck: document.querySelector("#blueMeshCheck"),
+  blueMeshToken: document.querySelector("#blueMeshToken"),
+  blueMeshSmoke: document.querySelector("#blueMeshSmoke"),
+  blueMeshOpenDocs: document.querySelector("#blueMeshOpenDocs"),
+  blueMeshCopyServer: document.querySelector("#blueMeshCopyServer"),
+  blueMeshCopyPush: document.querySelector("#blueMeshCopyPush"),
+  settingsOpenProject: document.querySelector("#settingsOpenProject"),
+  settingsRunAudit: document.querySelector("#settingsRunAudit")
+};
+
+function wireRebuiltShellButtons() {
+  const wire = (id, handler) => {
+    const button = rebuiltButtonElements[id] || document.querySelector(`#${id}`);
+    if (!button) return;
+    button.onclick = async () => {
+      try {
+        const result = await handler();
+        if (result !== undefined) setWorkbenchOutput(result);
+      } catch (error) {
+        setWorkbenchOutput(error.message || String(error));
+      }
+    };
+  };
+  const click = id => document.querySelector(`#${id}`)?.click();
+
+  wire("chatRunAudit", async () => { selectTab("tools", "diagnostics"); showBottomPanel("output"); return window.bluePet.controlAudit(); });
+  wire("chatToolPaste", async () => click("pasteSend"));
+  wire("chatToolOcr", async () => click("useOcr"));
+  wire("chatAttachFiles", async () => click("files"));
+  wire("chatAttachImages", async () => click("images"));
+  wire("chatAttachFolder", async () => click("folder"));
+  wire("chatPasteClipboard", async () => click("clipboard"));
+  wire("chatScanImage", async () => click("scanImage"));
+  wire("chatToolIdea", async () => { selectTab("workspace", "idea-lab"); document.querySelector("#labTitle")?.focus(); });
+  wire("chatToolLearn", async () => { selectTab("workspace", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
+  wire("chatToolResearch", async () => { selectTab("workspace", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
+  wire("chatToolAgent", async () => { selectTab("workspace", "research-lab"); document.querySelector("#agentGoal")?.focus(); });
+
+  wire("devRunAudit", async () => window.bluePet.controlAudit());
+  wire("devRunDoctor", async () => window.bluePet.doctor());
+  wire("devSystemInfo", async () => window.bluePet.systemInfo());
+  wire("devOpenProject", async () => window.bluePet.openProject());
+  wire("devFocusDiagnostics", async () => { selectTab("tools", "diagnostics"); showBottomPanel("output"); return "Diagnostics focused."; });
+  wire("devSecurityScan", async () => { selectTab("systems", "security"); click("securityScan"); });
+  wire("devBlueMeshCheck", async () => window.bluePet.blueMeshStatus());
+
+  wire("streamingStatusRefresh", async () => window.bluePet.streamingStatus());
+  wire("streamingObsSave", async () => window.bluePet.saveStreamingConfig({ obs: {}, updatedFrom: "control-center" }));
+  wire("streamingObsCheck", async () => window.bluePet.checkObs({}));
+  wire("streamingObsSceneRefresh", async () => window.bluePet.listObsScenes({}));
+  wire("streamingObsCaptureGuide", async () => window.bluePet.streamingPlan({ kind: "obs_capture_guide" }));
+  wire("streamingObsSceneSwitch", async () => window.bluePet.switchObsScene({ sceneName: "" }));
+  wire("streamingSavePlatform", async () => window.bluePet.saveStreamingConfig({ platforms: [], updatedFrom: "control-center" }));
+  wire("streamingChatReadiness", async () => window.bluePet.streamingPlan({ kind: "chat_readiness" }));
+  wire("streamingRulesCheck", async () => window.bluePet.streamingPlan({ kind: "rules_check" }));
+  wire("streamingModerationPlan", async () => window.bluePet.streamingPlan({ kind: "moderation" }));
+  wire("streamingToggleVrm", async () => window.bluePet.streamingPlan({ kind: "toggle_vrm" }));
+  wire("streamingToggleLive2d", async () => window.bluePet.streamingPlan({ kind: "toggle_live2d" }));
+  wire("streamingToggleWarudo", async () => window.bluePet.streamingPlan({ kind: "toggle_warudo" }));
+  wire("streamingVoiceSafety", async () => window.bluePet.streamingPlan({ kind: "voice_safety" }));
+  wire("streamingVoiceTest", async () => { click("voiceTest"); return "Streaming voice test started through Blue voice controls."; });
+  wire("streamingIndependencePlan", async () => window.bluePet.streamingPlan({ kind: "independent_stream" }));
+  wire("streamingGoLiveChecklist", async () => window.bluePet.streamingPlan({ kind: "go_live_checklist" }));
+
+  wire("blueMeshCheck", async () => window.bluePet.blueMeshStatus());
+  wire("blueMeshToken", async () => window.bluePet.blueMeshToken());
+  wire("blueMeshSmoke", async () => window.bluePet.blueMeshSmoke());
+  wire("blueMeshOpenDocs", async () => window.bluePet.blueMeshOpenDocs());
+  wire("blueMeshCopyServer", async () => "Start the BlueMesh receiver from the tools/bluemesh scripts, then paste the session token on the other trusted PC.");
+  wire("blueMeshCopyPush", async () => "Use the BlueMesh push command with the trusted peer URL and session-only token. Tokens are never committed.");
+
+  wire("settingsOpenProject", async () => window.bluePet.openProject());
+  wire("settingsRunAudit", async () => window.bluePet.controlAudit());
+}
+
+wireRebuiltShellButtons();

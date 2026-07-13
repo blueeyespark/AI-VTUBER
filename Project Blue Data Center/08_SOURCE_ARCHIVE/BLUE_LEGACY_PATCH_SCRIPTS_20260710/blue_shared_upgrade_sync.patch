@@ -1,0 +1,708 @@
+diff --git a/Project Blue App/desktop_pet/upgrade-sync.cjs b/Project Blue App/desktop_pet/upgrade-sync.cjs
+new file mode 100644
+index 0000000..cb0fb54
+--- /dev/null
++++ b/Project Blue App/desktop_pet/upgrade-sync.cjs	
+@@ -0,0 +1,251 @@
++"use strict";
++
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const { runBoundedProcess } = require("./process-runner.cjs");
++const desktopVersion = require("./package.json").version;
++
++const SYNC_SCHEMA = "project-blue-shared-upgrade-sync-v1";
++
++function splitLines(value) {
++  return String(value || "")
++    .replace(/\r\n/g, "\n")
++    .split("\n")
++    .map(line => line.trimEnd())
++    .filter(Boolean);
++}
++
++function parseAheadBehind(indicator) {
++  const result = { ahead: 0, behind: 0 };
++  for (const part of String(indicator || "").split(",")) {
++    const ahead = part.match(/ahead\s+(\d+)/i);
++    const behind = part.match(/behind\s+(\d+)/i);
++    if (ahead) result.ahead = Number(ahead[1]);
++    if (behind) result.behind = Number(behind[1]);
++  }
++  return result;
++}
++
++function parseBranchStatus(output) {
++  const lines = splitLines(output);
++  const status = {
++    branch: "unknown",
++    upstream: "",
++    ahead: 0,
++    behind: 0,
++    clean: true,
++    changes: []
++  };
++
++  if (lines[0]?.startsWith("## ")) {
++    const header = lines.shift().slice(3).trim();
++    const match = header.match(/^(.+?)(?:\.\.\.([^\s]+))?(?:\s+\[(.+)\])?$/);
++    if (match) {
++      status.branch = match[1].trim();
++      status.upstream = (match[2] || "").trim();
++      Object.assign(status, parseAheadBehind(match[3] || ""));
++    } else if (header) {
++      status.branch = header;
++    }
++  }
++
++  status.changes = lines.map(line => ({
++    code: line.slice(0, 2),
++    path: line.slice(3).trim()
++  })).filter(change => change.path);
++  status.clean = status.changes.length === 0;
++  return status;
++}
++
++function classifySyncState(status) {
++  if (!status || typeof status !== "object") return "unknown";
++  if (!status.upstream) return "no-upstream";
++  if (!status.clean) return "local-uncommitted-changes";
++  if (status.ahead > 0 && status.behind > 0) return "diverged";
++  if (status.behind > 0) return "behind-roommate";
++  if (status.ahead > 0) return "ahead-of-roommate";
++  return "synced";
++}
++
++function syncAdvice(state, status = {}) {
++  switch (state) {
++    case "synced":
++      return "Both PCs should see the same committed Blue version after they pull.";
++    case "behind-roommate":
++      return `Your roommate has ${status.behind} committed upgrade(s). Back up, then pull.`;
++    case "ahead-of-roommate":
++      return `You have ${status.ahead} committed upgrade(s). Push them so your roommate can pull.`;
++    case "diverged":
++      return "Both PCs have unique commits. Stop and merge with a human review.";
++    case "local-uncommitted-changes":
++      return "This PC has uncommitted local edits. Commit, stash, or review them before syncing.";
++    case "no-upstream":
++      return "This branch has no upstream remote. Connect it to the shared GitHub repository first.";
++    default:
++      return "Sync state is unknown. Check Git and network access.";
++  }
++}
++
++function normalizeRepoRoot(repoRoot) {
++  const resolved = path.resolve(String(repoRoot || ""));
++  if (!path.isAbsolute(resolved)) {
++    throw new Error("Shared sync requires an absolute repository path.");
++  }
++  return resolved;
++}
++
++function safeDirectoryValue(repoRoot) {
++  return repoRoot.replace(/\\/g, "/");
++}
++
++async function runGit(repoRoot, args, limits = {}) {
++  const repository = normalizeRepoRoot(repoRoot);
++  return runBoundedProcess(
++    "git",
++    ["-c", `safe.directory=${safeDirectoryValue(repository)}`, "-C", repository, ...args],
++    { cwd: repository, windowsHide: true, shell: false },
++    {
++      timeoutMs: limits.timeoutMs || 45000,
++      maxOutputBytes: limits.maxOutputBytes || 1048576
++    }
++  );
++}
++
++async function tryGit(repoRoot, args, fallback = "") {
++  try {
++    return await runGit(repoRoot, args, { timeoutMs: 20000, maxOutputBytes: 262144 });
++  } catch {
++    return fallback;
++  }
++}
++
++function shortCommit(value) {
++  const text = String(value || "").trim();
++  return text.length > 12 ? text.slice(0, 12) : text;
++}
++
++async function readSharedSyncStatus(repoRoot, appRoot) {
++  const repository = normalizeRepoRoot(repoRoot);
++  const statusOutput = await runGit(repository, ["status", "--short", "--branch"]);
++  const branchStatus = parseBranchStatus(statusOutput);
++  const state = classifySyncState(branchStatus);
++  const [head, upstreamHead, remoteUrl, latestCommit] = await Promise.all([
++    tryGit(repository, ["rev-parse", "HEAD"], "unknown"),
++    branchStatus.upstream
++      ? tryGit(repository, ["rev-parse", "@{u}"], "unknown")
++      : Promise.resolve(""),
++    tryGit(repository, ["remote", "get-url", "origin"], "origin not configured"),
++    tryGit(repository, ["log", "-1", "--pretty=%h %cd %s", "--date=iso"], "unknown")
++  ]);
++  return {
++    schema: SYNC_SCHEMA,
++    checkedAt: new Date().toISOString(),
++    host: os.hostname(),
++    desktopVersion,
++    repositoryRoot: repository,
++    appRoot: path.resolve(String(appRoot || repository)),
++    sharedSource: "GitHub remote named origin",
++    sameWifiMode: "Use the shared repository as the meeting place; no direct LAN file writes.",
++    state,
++    summary: syncAdvice(state, branchStatus),
++    status: {
++      ...branchStatus,
++      head: head.trim(),
++      headShort: shortCommit(head),
++      upstreamHead: upstreamHead.trim(),
++      upstreamHeadShort: shortCommit(upstreamHead),
++      remoteUrl: remoteUrl.trim(),
++      latestCommit: latestCommit.trim()
++    },
++    safeRules: [
++      "Blue checks remote commits before changing files.",
++      "Blue creates a local data backup before pulling upgrades.",
++      "Blue refuses to pull over uncommitted edits.",
++      "Blue refuses automatic merges when both PCs changed different commits.",
++      "Blue only pushes commits that already exist locally; it does not invent commits silently."
++    ]
++  };
++}
++
++async function fetchSharedSyncStatus(repoRoot, appRoot) {
++  const repository = normalizeRepoRoot(repoRoot);
++  await runGit(repository, ["fetch", "--prune", "origin"], {
++    timeoutMs: 120000,
++    maxOutputBytes: 1048576
++  });
++  return readSharedSyncStatus(repository, appRoot);
++}
++
++function timestampForPath(date = new Date()) {
++  return date.toISOString()
++    .replace(/[-:]/g, "")
++    .replace(/\..+$/, "")
++    .replace("T", "-");
++}
++
++function safeHostName() {
++  return os.hostname().replace(/[^a-z0-9_.-]+/gi, "_").slice(0, 60) || "pc";
++}
++
++function copyDirectoryIfPresent(source, target) {
++  if (!fs.existsSync(source)) return false;
++  fs.mkdirSync(path.dirname(target), { recursive: true });
++  fs.cpSync(source, target, {
++    recursive: true,
++    force: false,
++    errorOnExist: false
++  });
++  return true;
++}
++
++async function createSharedSyncBackup(appRoot, repoRoot, reason = "manual shared sync backup") {
++  const appDirectory = path.resolve(String(appRoot || ""));
++  const repository = normalizeRepoRoot(repoRoot);
++  const backupRoot = path.join(
++    appDirectory,
++    "release_backups",
++    `sync-${timestampForPath()}-${safeHostName()}`
++  );
++  fs.mkdirSync(backupRoot, { recursive: true });
++  const status = await readSharedSyncStatus(repository, appDirectory).catch(error => ({
++    error: error.message
++  }));
++  const copiedBlueData = copyDirectoryIfPresent(
++    path.join(appDirectory, ".blue"),
++    path.join(backupRoot, "blue-data")
++  );
++  const manifest = {
++    schema: "project-blue-shared-sync-backup-v1",
++    createdAt: new Date().toISOString(),
++    host: os.hostname(),
++    reason,
++    appRoot: appDirectory,
++    repositoryRoot: repository,
++    copiedBlueData,
++    git: status
++  };
++  const manifestPath = path.join(backupRoot, "SYNC_BACKUP_MANIFEST.json");
++  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
++  return {
++    backupRoot,
++    manifestPath,
++    copiedBlueData,
++    message: copiedBlueData
++      ? "Backed up Blue's local memory/config data before shared sync."
++      : "Created a sync backup manifest. No .blue data folder was present to copy."
++  };
++}
++
++async function pullSharedUpgrade(repoRoot, appRoot) {
++  const before = await fetchSharedSyncStatus(repoRoot, appRoot);
++  if (!before.status.clean) {
++    throw new Error("Blue will not pull while this PC has uncommitted local edits.");
++  }
++  if (before.state === "diverged") {
++    throw new Error("Both PCs have unique commits. Ask a human to merge before pulling.");
++  }
++  const backup = await createSharedSyncBackup(appRoot, repoRoot, "pre-pull shared upgrade backup");
++  if (before.status.behind === 0) {
++    return {
++      state: "already-current",
++      before,
++      after: before,
++      backup,
++      output: "No roommate upgrades were waiting on origin.",
++      restartRequired: false
++    };
++  }
++  const branch = before.status.branch === "unknown" ? "main" : before.status.branch;
++  const output = await runGit(repoRoot, ["pull", "--ff-only", "origin", branch], {
++    timeoutMs: 120000,
++    maxOutputBytes: 2097152
++  });
++  const after = await readSharedSyncStatus(repoRoot, appRoot);
++  return {
++    state: "pulled",
++    before,
++    after,
++    backup,
++    output,
++    restartRequired: true
++  };
++}
++
++async function publishSharedUpgrade(repoRoot, appRoot) {
++  const before = await fetchSharedSyncStatus(repoRoot, appRoot);
++  if (!before.status.clean) {
++    throw new Error("Blue will not push while this PC has uncommitted local edits.");
++  }
++  if (before.status.behind > 0) {
++    throw new Error("Your roommate has commits you do not have yet. Pull and review first.");
++  }
++  if (before.status.ahead === 0) {
++    return {
++      state: "nothing-to-publish",
++      before,
++      after: before,
++      output: "No local commits are waiting to publish.",
++      restartRequired: false
++    };
++  }
++  const branch = before.status.branch === "unknown" ? "main" : before.status.branch;
++  const output = await runGit(repoRoot, ["push", "origin", branch], {
++    timeoutMs: 120000,
++    maxOutputBytes: 2097152
++  });
++  const after = await fetchSharedSyncStatus(repoRoot, appRoot);
++  return {
++    state: "published",
++    before,
++    after,
++    output,
++    restartRequired: false
++  };
++}
++
++module.exports = {
++  SYNC_SCHEMA,
++  parseBranchStatus,
++  classifySyncState,
++  syncAdvice,
++  readSharedSyncStatus,
++  fetchSharedSyncStatus,
++  createSharedSyncBackup,
++  pullSharedUpgrade,
++  publishSharedUpgrade
++};
+diff --git a/Project Blue App/desktop_pet/test/upgrade-sync.test.cjs b/Project Blue App/desktop_pet/test/upgrade-sync.test.cjs
+new file mode 100644
+index 0000000..f8ecbf3
+--- /dev/null
++++ b/Project Blue App/desktop_pet/test/upgrade-sync.test.cjs	
+@@ -0,0 +1,48 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const test = require("node:test");
++const {
++  parseBranchStatus,
++  classifySyncState,
++  syncAdvice
++} = require("../upgrade-sync.cjs");
++
++test("shared sync parses clean branch status", () => {
++  const parsed = parseBranchStatus("## main...origin/main\n");
++  assert.equal(parsed.branch, "main");
++  assert.equal(parsed.upstream, "origin/main");
++  assert.equal(parsed.ahead, 0);
++  assert.equal(parsed.behind, 0);
++  assert.equal(parsed.clean, true);
++  assert.equal(classifySyncState(parsed), "synced");
++});
++
++test("shared sync detects roommate commits waiting remotely", () => {
++  const parsed = parseBranchStatus("## main...origin/main [behind 2]\n");
++  assert.equal(parsed.behind, 2);
++  assert.equal(classifySyncState(parsed), "behind-roommate");
++  assert.match(syncAdvice(classifySyncState(parsed), parsed), /pull/i);
++});
++
++test("shared sync detects local commits ready to publish", () => {
++  const parsed = parseBranchStatus("## main...origin/main [ahead 1]\n");
++  assert.equal(parsed.ahead, 1);
++  assert.equal(classifySyncState(parsed), "ahead-of-roommate");
++  assert.match(syncAdvice(classifySyncState(parsed), parsed), /push/i);
++});
++
++test("shared sync refuses automatic divergent upgrades", () => {
++  const parsed = parseBranchStatus("## main...origin/main [ahead 1, behind 3]\n");
++  assert.equal(parsed.ahead, 1);
++  assert.equal(parsed.behind, 3);
++  assert.equal(classifySyncState(parsed), "diverged");
++  assert.match(syncAdvice(classifySyncState(parsed), parsed), /merge/i);
++});
++
++test("shared sync protects uncommitted edits", () => {
++  const parsed = parseBranchStatus([
++    "## main...origin/main",
++    " M Project Blue App/desktop_pet/main.cjs",
++    "?? notes.md"
++  ].join("\n"));
++  assert.equal(parsed.clean, false);
++  assert.equal(parsed.changes.length, 2);
++  assert.equal(classifySyncState(parsed), "local-uncommitted-changes");
++});
+diff --git a/Project Blue App/desktop_pet/package.json b/Project Blue App/desktop_pet/package.json
+index 68ace2c..39c0f3a 100644
+--- a/Project Blue App/desktop_pet/package.json	
++++ b/Project Blue App/desktop_pet/package.json	
+@@ -1,10 +1,10 @@
+ {
+   "name": "project-blue-desktop-pet",
+-  "version": "2.3.0",
++  "version": "2.3.1",
+   "private": true,
+   "main": "main.cjs",
+   "scripts": {
+     "start": "electron .",
+-    "check": "node --check main.cjs && node --check preload.cjs && node --check control.js && node --check pet-renderer.js && node --check motion-core.mjs && node --check locomotion-core.cjs && node --check presence-core.cjs && node --check runtime-guards.cjs && node --check process-runner.cjs && node --check discord-addon.cjs",
++    "check": "node --check main.cjs && node --check preload.cjs && node --check control.js && node --check pet-renderer.js && node --check motion-core.mjs && node --check locomotion-core.cjs && node --check presence-core.cjs && node --check runtime-guards.cjs && node --check process-runner.cjs && node --check discord-addon.cjs && node --check upgrade-sync.cjs",
+     "test": "node --test test/*.test.cjs"
+   },
+   "dependencies": {
+diff --git a/Project Blue App/desktop_pet/package-lock.json b/Project Blue App/desktop_pet/package-lock.json
+index 0f86ca6..8c4060a 100644
+--- a/Project Blue App/desktop_pet/package-lock.json	
++++ b/Project Blue App/desktop_pet/package-lock.json	
+@@ -1,12 +1,12 @@
+ {
+   "name": "project-blue-desktop-pet",
+-  "version": "2.3.0",
++  "version": "2.3.1",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "project-blue-desktop-pet",
+-      "version": "2.3.0",
++      "version": "2.3.1",
+       "dependencies": {
+         "@pixiv/three-vrm": "latest",
+         "three": "latest"
+diff --git a/Project Blue App/desktop_pet/preload.cjs b/Project Blue App/desktop_pet/preload.cjs
+index 580f0ef..a67db87 100644
+--- a/Project Blue App/desktop_pet/preload.cjs	
++++ b/Project Blue App/desktop_pet/preload.cjs	
+@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld("bluePet", {
+   registerDiscord: token => ipcRenderer.invoke("blue:discord-register", token),
+   connectDiscord: token => ipcRenderer.invoke("blue:discord-connect", token),
+   disconnectDiscord: () => ipcRenderer.invoke("blue:discord-disconnect"),
++  syncStatus: () => ipcRenderer.invoke("blue:sync-status"),
++  syncCheck: () => ipcRenderer.invoke("blue:sync-check"),
++  syncBackup: () => ipcRenderer.invoke("blue:sync-backup"),
++  syncPull: () => ipcRenderer.invoke("blue:sync-pull"),
++  syncPush: () => ipcRenderer.invoke("blue:sync-push"),
+   openProject: () => ipcRenderer.invoke("blue:open-project"),
+   showControl: () => ipcRenderer.send("pet:show-control"),
+   toggleWander: () => ipcRenderer.send("pet:toggle-wander"),
+diff --git a/Project Blue App/desktop_pet/main.cjs b/Project Blue App/desktop_pet/main.cjs
+index 9eb1668..171221d 100644
+--- a/Project Blue App/desktop_pet/main.cjs	
++++ b/Project Blue App/desktop_pet/main.cjs	
+@@ -30,6 +30,13 @@ const {
+ const { runBoundedProcess } = require("./process-runner.cjs");
+ const { DiscordAddon, normalizeDiscordConfig } = require("./discord-addon.cjs");
+ const { advanceLocomotion } = require("./locomotion-core.cjs");
++const {
++  readSharedSyncStatus,
++  fetchSharedSyncStatus,
++  createSharedSyncBackup,
++  pullSharedUpgrade,
++  publishSharedUpgrade
++} = require("./upgrade-sync.cjs");
+ const desktopVersion = require("./package.json").version;
+ 
+ let petWindow;
+@@ -52,5 +59,6 @@ let controlRecoveryTimer = null;
+ let controlRecoveryAttempts = [];
+ const appRoot = path.resolve(__dirname, "..");
++const repositoryRoot = path.resolve(appRoot, "..");
+ const blueDataDirectory = path.join(appRoot, ".blue");
+ const presenceSettingsPath = path.join(blueDataDirectory, "presence.json");
+ const observationLedgerPath = path.join(blueDataDirectory, "observations.jsonl");
+@@ -1068,6 +1076,39 @@ function registerHandlers() {
+     if (error) throw new Error(error);
+     return "Opened Project Blue App.";
+   });
++  trustedHandle("blue:sync-status", async () =>
++    readSharedSyncStatus(repositoryRoot, appRoot)
++  );
++  trustedHandle("blue:sync-check", async () =>
++    fetchSharedSyncStatus(repositoryRoot, appRoot)
++  );
++  trustedHandle("blue:sync-backup", async () => {
++    const result = await createSharedSyncBackup(
++      appRoot,
++      repositoryRoot,
++      "manual shared upgrade sync backup"
++    );
++    appendActivity(activityLedgerPath, "sync", "Manual shared sync backup created", {
++      backupRoot: result.backupRoot,
++      copiedBlueData: result.copiedBlueData
++    });
++    return result;
++  });
++  trustedHandle("blue:sync-pull", async () => {
++    const result = await pullSharedUpgrade(repositoryRoot, appRoot);
++    appendActivity(activityLedgerPath, "sync", "Shared upgrade pull completed", {
++      state: result.state,
++      restartRequired: result.restartRequired
++    });
++    return result;
++  });
++  trustedHandle("blue:sync-push", async () => {
++    const result = await publishSharedUpgrade(repositoryRoot, appRoot);
++    appendActivity(activityLedgerPath, "sync", "Shared upgrade publish completed", {
++      state: result.state
++    });
++    return result;
++  });
+   trustedHandle("blue:share-files", async () => {
+     const result = await dialog.showOpenDialog(controlWindow, {
+       title: "Share files with Blue",
+diff --git a/Project Blue App/desktop_pet/index.html b/Project Blue App/desktop_pet/index.html
+index 775e31c..293779d 100644
+--- a/Project Blue App/desktop_pet/index.html	
++++ b/Project Blue App/desktop_pet/index.html	
+@@ -25,6 +25,7 @@
+         <option value="Discord"></option>
+         <option value="Security status"></option>
+         <option value="System health"></option>
++        <option value="Shared upgrade sync"></option>
+         <option value="Share files"></option>
+         <option value="Scan image text"></option>
+       </datalist>
+@@ -46,7 +47,8 @@
+     <button data-tab="motion" data-icon="âžœ">Motion</button>
+     <button data-tab="discord" data-icon="â—Œ">Discord</button>
+     <button data-tab="security" data-icon="âŒ¾">Security</button>
++    <button data-tab="sync" data-icon="â‡„">Sync</button>
+     <button data-tab="system" data-icon="âš™">System</button>
+-    <div class="nav-note">Ctrl+1â€¦8 switches views<br>Ctrl+K searches controls</div>
++    <div class="nav-note">Ctrl+1â€¦9 switches views<br>Ctrl+K searches controls</div>
+   </nav>
+   <main>
+@@ -253,6 +255,25 @@
+       <pre id="securityDetails">Choose Read Security Status for a manual, read-only snapshot.</pre>
+       <p class="hint">Blue is not an antivirus engine and cannot guarantee that a computer is malware-free. Use Windows Security or your installed security provider for scanning and remediation.</p>
+     </section>
++    <section data-panel="sync" hidden>
++      <h2>Shared Upgrade Sync</h2>
++      <p class="hint">For two PCs on the same project, Blue uses the shared GitHub repository as the source of truth. If your roommate pushes a committed upgrade, you can check, back up, and pull it. If you push a committed upgrade, they can pull it. Direct Wi-Fi file overwrites stay disabled.</p>
++      <div class="security-summary">
++        <span id="syncState" class="status-chip">Sync: not checked</span>
++        <span id="syncBranch" class="status-chip">Branch: unknown</span>
++        <span id="syncAheadBehind" class="status-chip">Ahead/behind: unknown</span>
++      </div>
++      <div class="grid">
++        <button id="syncStatus">Local Status</button>
++        <button id="syncCheck">Check GitHub</button>
++        <button id="syncBackup">Backup Blue Data</button>
++        <button id="syncPull">Pull Roommate Upgrades</button>
++        <button id="syncPush">Publish My Commits</button>
++      </div>
++      <pre id="syncDetails">Choose Check GitHub to see whether this PC, your roommate's PC, and origin/main match.</pre>
++      <p class="hint">Pull uses fast-forward only. If both PCs changed Blue differently, Blue will stop and tell you to merge manually instead of corrupting either version.</p>
++      <p class="hint">Publish only pushes commits you already made; Blue will not auto-commit secrets, tokens, databases, or unfinished work.</p>
++    </section>
+     <section data-panel="system" hidden>
+       <h2>Safe PC Help</h2>
+       <div class="grid">
+@@ -267,6 +288,7 @@
+     <span>Local mode</span>
+     <span id="footerDiscord">Discord: disconnected</span>
+     <span id="footerSecurity">Security: not scanned</span>
++    <span id="footerSync">Sync: not checked</span>
+     <span>Vision off</span>
+   </footer>
+   <script src="control.js"></script>
+diff --git a/Project Blue App/desktop_pet/control.js b/Project Blue App/desktop_pet/control.js
+index 103da82..5781f0a 100644
+--- a/Project Blue App/desktop_pet/control.js	
++++ b/Project Blue App/desktop_pet/control.js	
+@@ -18,12 +18,13 @@ const commandSearch = document.querySelector("#commandSearch");
+ const footerConversation = document.querySelector("#footerConversation");
+ const footerDiscord = document.querySelector("#footerDiscord");
+ const footerSecurity = document.querySelector("#footerSecurity");
++const footerSync = document.querySelector("#footerSync");
+ let lastOcrText = "";
+ const validTabs = new Set([
+-  "chat", "presence", "create", "expansion", "motion", "discord", "security", "system"
++  "chat", "presence", "create", "expansion", "motion", "discord", "security", "sync", "system"
+ ]);
+ const tabOrder = [
+-  "chat", "presence", "create", "expansion", "motion", "discord", "security", "system"
++  "chat", "presence", "create", "expansion", "motion", "discord", "security", "sync", "system"
+ ];
+ 
+ function selectTab(value) {
+@@ -64,4 +65,5 @@ const commandActions = [
+   { terms: ["movement", "motion", "expressions"], run: () => selectTab("motion") },
+   { terms: ["discord"], run: () => selectTab("discord") },
+   { terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("security") },
++  { terms: ["sync", "upgrade", "github", "roommate", "pull", "push"], run: () => selectTab("sync") },
+   { terms: ["system", "health", "doctor"], run: () => selectTab("system") },
+@@ -81,6 +83,6 @@ function runCommand(value) {
+     command.run();
+     commandSearch.value = "";
+   } else {
+-    append("blue", `No control matched â€œ${value}â€. Try Chat, Motion, Security, or System.`);
++    append("blue", `No control matched â€œ${value}â€. Try Chat, Motion, Sync, Security, or System.`);
+   }
+ }
+@@ -96,6 +98,6 @@ window.addEventListener("keydown", event => {
+     commandSearch.select();
+     return;
+   }
+-  if (event.ctrlKey && !event.altKey && !event.shiftKey && /^[1-8]$/.test(event.key)) {
++  if (event.ctrlKey && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+     event.preventDefault();
+     selectTab(tabOrder[Number(event.key) - 1]);
+@@ -496,6 +498,86 @@ document.querySelector("#auditEvents").onclick = async () => {
+   catch (error) { document.querySelector("#status").textContent = error.message; }
+ };
+ document.querySelector("#openProject").onclick = () => perform(window.bluePet.openProject, false);
++const syncDetails = document.querySelector("#syncDetails");
++const syncState = document.querySelector("#syncState");
++const syncBranch = document.querySelector("#syncBranch");
++const syncAheadBehind = document.querySelector("#syncAheadBehind");
++function syncChipClass(state) {
++  if (["synced", "already-current", "published", "pulled"].includes(state)) return "status-chip safe";
++  if (["behind-roommate", "ahead-of-roommate"].includes(state)) return "status-chip attention";
++  return "status-chip";
++}
++function statusFromSyncResult(value) {
++  return value?.after?.status || value?.before?.status || value?.status || {};
++}
++function formatSyncStatus(value) {
++  if (!value || typeof value !== "object") return String(value || "Sync status unavailable.");
++  const status = statusFromSyncResult(value);
++  const state = value.state || value?.after?.state || value?.before?.state || "unknown";
++  const backup = value.backup;
++  return [
++    `State: ${state}`,
++    `Summary: ${value.summary || value?.after?.summary || value?.before?.summary || ""}`,
++    `This PC: ${value.host || value?.after?.host || value?.before?.host || "unknown"}`,
++    `Desktop version: ${value.desktopVersion || value?.after?.desktopVersion || value?.before?.desktopVersion || "unknown"}`,
++    `Shared source: ${value.sharedSource || value?.after?.sharedSource || value?.before?.sharedSource || "GitHub origin"}`,
++    `Wi-Fi mode: ${value.sameWifiMode || value?.after?.sameWifiMode || value?.before?.sameWifiMode || "repo sync"}`,
++    `Branch: ${status.branch || "unknown"} -> ${status.upstream || "no upstream"}`,
++    `Ahead: ${status.ahead ?? "?"}; Behind: ${status.behind ?? "?"}`,
++    `Working tree: ${status.clean ? "clean" : "has local uncommitted edits"}`,
++    `Local commit: ${status.headShort || status.head || "unknown"}`,
++    `Remote commit: ${status.upstreamHeadShort || status.upstreamHead || "unknown"}`,
++    `Latest local commit: ${status.latestCommit || "unknown"}`,
++    `Remote URL: ${status.remoteUrl || "unknown"}`,
++    backup ? "" : null,
++    backup ? `Backup: ${backup.backupRoot}` : null,
++    value.output ? "" : null,
++    value.output ? `Git output:\n${value.output}` : null,
++    value.restartRequired ? "" : null,
++    value.restartRequired ? "Restart Blue after this pull so the upgraded files are loaded." : null,
++    "",
++    "Rules:",
++    ...(value.safeRules || value?.after?.safeRules || value?.before?.safeRules || [])
++      .map(rule => `- ${rule}`)
++  ].filter(line => line !== null && line !== undefined).join("\n");
++}
++function renderSyncStatus(value) {
++  const status = statusFromSyncResult(value);
++  const state = value?.state || value?.after?.state || value?.before?.state || "unknown";
++  syncState.textContent = `Sync: ${state}`;
++  syncState.className = syncChipClass(state);
++  syncBranch.textContent = `Branch: ${status.branch || "unknown"}`;
++  syncAheadBehind.textContent = `Ahead ${status.ahead ?? "?"} / behind ${status.behind ?? "?"}`;
++  syncDetails.textContent = formatSyncStatus(value);
++  footerSync.textContent = `Sync: ${state}`;
++}
++async function syncAction(buttonId, label, action, confirmText = "") {
++  const button = document.querySelector(buttonId);
++  if (confirmText && !confirm(confirmText)) return;
++  button.disabled = true;
++  button.textContent = `${label}...`;
++  try {
++    renderSyncStatus(await action());
++  } catch (error) {
++    syncDetails.textContent = `Shared sync failed: ${error.message}`;
++    footerSync.textContent = "Sync: needs review";
++  } finally {
++    button.disabled = false;
++    button.textContent = label;
++  }
++}
++document.querySelector("#syncStatus").onclick = () =>
++  syncAction("#syncStatus", "Local Status", window.bluePet.syncStatus);
++document.querySelector("#syncCheck").onclick = () =>
++  syncAction("#syncCheck", "Check GitHub", window.bluePet.syncCheck);
++document.querySelector("#syncBackup").onclick = () =>
++  syncAction("#syncBackup", "Backup Blue Data", window.bluePet.syncBackup);
++document.querySelector("#syncPull").onclick = () =>
++  syncAction("#syncPull", "Pull Roommate Upgrades", window.bluePet.syncPull,
++    "Back up local Blue data and pull your roommate's committed upgrades from GitHub?");
++document.querySelector("#syncPush").onclick = () =>
++  syncAction("#syncPush", "Publish My Commits", window.bluePet.syncPush,
++    "Publish this PC's committed Blue upgrades to GitHub so your roommate can pull them?");
+ document.querySelector("#providerStatus").onclick = () =>
+   perform(window.bluePet.providerStatus, false);
+ document.querySelector("#connectModel").onclick = () =>
+@@ -777,6 +858,8 @@ window.bluePet.presenceStatus().then(renderPresence)
+ window.bluePet.ensureSession()
+   .then(refreshConversations)
+   .catch(error => append("blue", error.message));
++window.bluePet.syncStatus().then(renderSyncStatus)
++  .catch(error => { syncDetails.textContent = error.message; });
+ window.bluePet.discordConfig().then(fillDiscordConfig)
+   .catch(error => { discordStatus.textContent = error.message; });
+ window.bluePet.discordStatus().then(showDiscordStatus)
+diff --git a/README.md b/README.md
+index e05d2d7..0932035 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,10 @@
+ # Project Blue
+ 
++## Shared upgrade sync
++
++Blue now includes a safe GitHub-backed sync path for two PCs working on different versions. Open **Control Center → Sync** to check whether this PC is ahead, behind, synced, or diverged from `origin/main`. Pulls create a local Blue data backup first and use fast-forward-only Git pulls so roommate conflicts stop for review instead of overwriting files.
++
++Use the shared repository as the source of truth: when one person commits and pushes an upgrade, the other person clicks **Check GitHub** and **Pull Roommate Upgrades**. Direct Wi-Fi file overwrites are intentionally disabled until a signed LAN protocol is built.
++
+ Project Blue is a local-first AI companion/workbench. It keeps memory,
+ approvals, audit trails, desktop presence, and research notes on your PC.

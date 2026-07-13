@@ -13,9 +13,14 @@ Current release: **Project Blue v3.3 / Desktop Pet v2.3.0**
 - `Project Blue App/desktop_pet/` - control center and roaming VRM desktop pet
 - `Project Blue App/assets/` - Blue's VRM, Blender source, and reference assets
 - `Project Blue Data Center/` - architecture, safety, operations, and roadmap
-- `START_PROJECT_BLUE_HERE.md` - local launch overview
+- `START_BLUE.ps1` / `START_BLUE.cmd` - main Project Blue launcher`r`n- `DISABLE_STARTUP.cmd` - removes Blue from Windows Startup`r`n- `START_PROJECT_BLUE_HERE.md` - local launch overview
 - `PROJECT_BLUE_BUILD_STATUS_V330_INSTALLED.md` - current verified build status
 
+## Blue Companion platform
+
+The newest organized prototype is `src/blue_companion/`. It maps Blue as a full AI companion platform: desktop avatar movement, one-file-at-a-time file interaction, taskbar-as-floor animation planning, transparent neck drag, AI-to-AI messages through BlueMesh, Discord/stream chat plans, OBS plans, vision/image intake, reference-aware art/model creation, teaching mode, social drafts with approval, schedules, and self-upgrade research planning.
+
+Companion docs live in `docs/companion/`. Current verification lives in `docs/status/BLUE_COMPANION_BUILD_VERIFICATION_20260710.md`.
 The local development workspace, runtime databases, secrets, dependency folders,
 and historical database backups are intentionally excluded from Git.
 
@@ -47,7 +52,7 @@ npm ci
 From the repository root:
 
 ```powershell
-.\open_blue.ps1
+.\START_BLUE.ps1
 ```
 
 Or run the core application directly:
@@ -57,6 +62,9 @@ cd "Project Blue App"
 .\run_blue.ps1
 ```
 
+## Launcher cleanup
+
+Use `START_BLUE.ps1` or `START_BLUE.cmd` from the repository root. Older root launchers were preserved under `tools/launchers/legacy_root_launchers/` so the root folder stays readable. App-internal command launchers remain inside `Project Blue App/`.
 ## VTuber models
 
 Blue's main avatar assets live in:

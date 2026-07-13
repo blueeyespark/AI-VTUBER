@@ -1,0 +1,134 @@
+diff --git a/Project Blue App/desktop_pet/main.cjs b/Project Blue App/desktop_pet/main.cjs
+index 30c28a7..3a4df8d 100644
+--- a/Project Blue App/desktop_pet/main.cjs	
++++ b/Project Blue App/desktop_pet/main.cjs	
+@@ -58,6 +58,8 @@ let petRecoveryAttempts = [];
+ let controlRecoveryTimer = null;
+ let controlRecoveryAttempts = [];
+ let voiceHotkeyRegistered = false;
++let petManuallyHidden = false;
++let controlManuallyHidden = false;
+ const appRoot = path.resolve(__dirname, "..");
+ const blueDataDirectory = path.join(appRoot, ".blue");
+ const presenceSettingsPath = path.join(blueDataDirectory, "presence.json");
+@@ -4974,7 +4976,7 @@ function startWandering() {
+ }
+ 
+ function schedulePetRecovery(reason) {
+-  if (quitting || petRecoveryTimer) return;
++  if (quitting || petRecoveryTimer || petManuallyHidden) return;
+   const now = Date.now();
+   petRecoveryAttempts = petRecoveryAttempts.filter(value => now - value < 60000);
+   if (petRecoveryAttempts.length >= 3) {
+@@ -5004,7 +5006,7 @@ function schedulePetRecovery(reason) {
+ }
+ 
+ function scheduleControlRecovery(reason) {
+-  if (quitting || controlRecoveryTimer) return;
++  if (quitting || controlRecoveryTimer || controlManuallyHidden) return;
+   const now = Date.now();
+   controlRecoveryAttempts = controlRecoveryAttempts.filter(
+     value => now - value < 60000
+@@ -5036,6 +5038,7 @@ function secureWebContents(contents) {
+ }
+ 
+ function createPetWindow() {
++  petManuallyHidden = false;
+   const area = screen.getPrimaryDisplay().workArea;
+   const petWidth = Math.min(330, area.width);
+   const petHeight = Math.min(560, area.height);
+@@ -5075,12 +5078,19 @@ function createPetWindow() {
+     roamVelocity = { x: 0, y: 0 };
+   });
+   petWindow.on("closed", () => {
+     petWindow = null;
+   });
++  petWindow.on("close", event => {
++    if (quitting) return;
++    event.preventDefault();
++    petManuallyHidden = true;
++    petWindow.hide();
++  });
+ }
+ 
+ function createControlWindow() {
++  controlManuallyHidden = false;
+   controlWindow = new BrowserWindow({
+     title: "Project Blue Control Center",
+     width: 1040,
+@@ -5112,18 +5123,32 @@ function createControlWindow() {
+   });
+   controlWindow.on("unresponsive", () => scheduleControlRecovery("unresponsive"));
+   controlWindow.on("close", event => {
+-    if (!quitting) {
+-      quitting = true;
+-      app.quit();
+-    }
++    if (quitting) return;
++    event.preventDefault();
++    controlManuallyHidden = true;
++    controlWindow.hide();
++  });
++  controlWindow.on("closed", () => {
++    controlWindow = null;
+   });
+ }
+ 
+ function showControl() {
++  controlManuallyHidden = false;
+   if (!controlWindow || controlWindow.isDestroyed()) createControlWindow();
+   controlWindow.show();
+   controlWindow.restore();
+   controlWindow.focus();
+ }
++
++function showPetWindow() {
++  petManuallyHidden = false;
++  if (!petWindow || petWindow.isDestroyed()) createPetWindow();
++  else petWindow.show();
++}
+ 
+ function createTray() {
+   const iconPath = path.join(appRoot, "src", "project_blue", "data", "blue_avatar.png");
+@@ -5133,8 +5153,7 @@ function createTray() {
+     {
+       label: "Show Blue",
+       click: () => {
+-        if (!petWindow || petWindow.isDestroyed()) createPetWindow();
+-        else petWindow.show();
++        showPetWindow();
+       }
+     },
+     { label: "Open Control Panel", click: showControl },
+@@ -6206,8 +6225,7 @@ function registerHandlers() {
+   });
+   trustedOn("pet:hover", () => {});
+   trustedOn("pet:show", () => {
+-    if (!petWindow || petWindow.isDestroyed()) createPetWindow();
+-    else petWindow.show();
++    showPetWindow();
+   });
+   trustedOn("pet:action", (_event, name) => {
+     if (name === "walk" || name === "run") {
+@@ -6232,7 +6250,10 @@ function registerHandlers() {
+     petWindow?.webContents.send("pet:speaking", speakingActive);
+     broadcastPresence();
+   });
+-  trustedOn("control:hide", () => controlWindow?.hide());
++  trustedOn("control:hide", () => {
++    controlManuallyHidden = true;
++    controlWindow?.hide();
++  });
+   trustedOn("app:quit", () => {
+     quitting = true;
+     clearTimeout(petRecoveryTimer);
+@@ -6247,8 +6268,7 @@ function registerHandlers() {
+ if (singleInstanceLock) {
+   app.on("second-instance", () => {
+     appendActivity(activityLedgerPath, "system", "Duplicate Blue launch redirected");
+-    if (!petWindow || petWindow.isDestroyed()) createPetWindow();
+-    else petWindow.show();
++    showPetWindow();
+     showControl();
+   });
+ }

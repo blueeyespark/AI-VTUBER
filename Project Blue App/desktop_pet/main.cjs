@@ -32,6 +32,24 @@ const {
 const { runBoundedProcess } = require("./process-runner.cjs");
 const { DiscordAddon, normalizeDiscordConfig } = require("./discord-addon.cjs");
 const { advanceLocomotion } = require("./locomotion-core.cjs");
+const { auditControlCenter } = require("./control-audit.cjs");
+const {
+  DEFAULT_STREAMING_CONFIG,
+  normalizeStreamingConfig,
+  sanitizeStreamingConfig,
+  streamingPlatformCatalog,
+  streamShowCatalog,
+  streamingAutonomyCatalog,
+  streamingPolicySummary,
+  buildStreamingPlan,
+  buildStreamerShowPlan,
+  buildStreamerRunOfShow,
+  buildStreamingPreflight,
+  streamingChatGuide,
+  moderateChatMessage,
+  adultPlatformReadiness,
+  obsRequest
+} = require("./streaming-core.cjs");
 const desktopVersion = require("./package.json").version;
 
 let petWindow;
@@ -53,11 +71,13 @@ let petRecoveryAttempts = [];
 let controlRecoveryTimer = null;
 let controlRecoveryAttempts = [];
 const appRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(appRoot, "..");
 const blueDataDirectory = path.join(appRoot, ".blue");
 const presenceSettingsPath = path.join(blueDataDirectory, "presence.json");
 const observationLedgerPath = path.join(blueDataDirectory, "observations.jsonl");
 const activityLedgerPath = path.join(blueDataDirectory, "presence-activity.jsonl");
 const discordConfigPath = path.join(blueDataDirectory, "discord-config.json");
+const streamingConfigPath = path.join(blueDataDirectory, "streaming-config.json");
 const vtuberModelConfigPath = path.join(blueDataDirectory, "vtuber-model.json");
 const voiceSettingsPath = path.join(blueDataDirectory, "voice-settings.json");
 const setupStatePath = path.join(blueDataDirectory, "setup-state.json");
@@ -73,6 +93,7 @@ const outfitReferencePath = path.join(blueDataDirectory, "outfit-reference.json"
 const outfitStyleReferencePath = path.join(blueDataDirectory, "outfit-style-reference.json");
 const conversationReferenceDirectory = path.join(blueDataDirectory, "conversation-references");
 const expansionDatabasePath = path.join(blueDataDirectory, "expansion.db");
+const blueMeshDatabasePath = path.join(blueDataDirectory, "bluemesh.db");
 const desktopStateDirectory = path.join(blueDataDirectory, "desktop_state");
 const sessionDataDirectory = path.join(desktopStateDirectory, "session");
 fs.mkdirSync(sessionDataDirectory, { recursive: true });
@@ -101,6 +122,7 @@ const recentSharedItemsByConversation = new Map();
 let currentConversation = "Blue Desktop Pet";
 const recentChatTurnsByConversation = new Map();
 let discordConfig = loadJson(discordConfigPath, normalizeDiscordConfig());
+let streamingConfig = normalizeStreamingConfig(loadJson(streamingConfigPath, DEFAULT_STREAMING_CONFIG));
 let phoneBridgeServer = null;
 let phoneBridgeToken = "";
 let phoneBridgeUrl = "";
@@ -183,6 +205,73 @@ function blue(args, timeoutMs = 45000) {
   );
 }
 
+function blueMeshEnvironment() {
+  return {
+    ...process.env,
+    PYTHONPATH: path.join(repoRoot, "src"),
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1"
+  };
+}
+
+function blueMesh(args, timeoutMs = 45000) {
+  return runBoundedProcess(
+    "python",
+    ["-m", "blue_mesh.lan", ...args],
+    {
+      cwd: repoRoot,
+      windowsHide: true,
+      shell: false,
+      env: blueMeshEnvironment()
+    },
+    { timeoutMs, maxOutputBytes: 2097152 }
+  );
+}
+
+function blueMeshStatusSummary() {
+  const lanModule = path.join(repoRoot, "src", "blue_mesh", "lan.py");
+  const transportModule = path.join(repoRoot, "src", "blue_mesh", "relay", "transport.py");
+  const docsPath = path.join(repoRoot, "docs", "BlueMeshLAN.md");
+  const toolsPath = path.join(repoRoot, "tools", "bluemesh");
+  const serverTool = path.join(toolsPath, "START_BLUEMESH_LAN_SERVER.ps1");
+  const pushTool = path.join(toolsPath, "PUSH_BLUEMESH_TO_PEER.ps1");
+  const installed = fs.existsSync(lanModule) && fs.existsSync(transportModule);
+  return {
+    installed,
+    rootModule: fs.existsSync(path.join(repoRoot, "src", "blue_mesh")),
+    appModule: fs.existsSync(path.join(appRoot, "src", "blue_mesh")),
+    lanModule,
+    transportModule,
+    docsPath,
+    docsReady: fs.existsSync(docsPath),
+    toolsPath,
+    toolsReady: fs.existsSync(toolsPath),
+    serverToolReady: fs.existsSync(serverTool),
+    pushToolReady: fs.existsSync(pushTool),
+    database: blueMeshDatabasePath,
+    databaseExists: fs.existsSync(blueMeshDatabasePath),
+    mode: "LAN/Wi-Fi sync with optional offline bundle import/export",
+    workflow: [
+      "Generate one session-only pairing token.",
+      "Run receiver server on one trusted PC.",
+      "Push a signed bundle from the other trusted PC.",
+      "Reverse direction when both PCs changed Blue.",
+      "Resolve conflicts manually instead of blind overwrite."
+    ],
+    security: {
+      tokensStored: false,
+      envFilesSynced: false,
+      importsRequireApproval: true,
+      privateNetworkOnly: true,
+      sharedIdentityRequired: true,
+      conflictReportsInsteadOfOverwrites: true
+    },
+    readiness: installed && fs.existsSync(docsPath) && fs.existsSync(serverTool) && fs.existsSync(pushTool)
+      ? "ready"
+      : "needs_setup"
+  };
+}
+
 async function expansion(args, input = undefined) {
   const output = await runBoundedProcess(
     "python",
@@ -248,6 +337,22 @@ function blueProcessEnvironment() {
   };
 }
 
+
+function isMissingGitLfsPointer(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > 1024) return false;
+    const marker = fs.readFileSync(filePath, "utf8");
+    return marker.startsWith("version https://git-lfs.github.com/spec");
+  } catch {
+    return true;
+  }
+}
+
+function isUsableVtuberModelAsset(model) {
+  if (String(model?.format || "").toLowerCase() !== "vrm") return true;
+  return !isMissingGitLfsPointer(path.resolve(__dirname, model.path || ""));
+}
 function vtuberModelRegistry() {
   const builtIn = [
     {
@@ -308,7 +413,7 @@ function vtuberModelRegistry() {
       });
     }
   } catch {}
-  return [...builtIn, ...custom];
+  return [...builtIn, ...custom].filter(isUsableVtuberModelAsset);
 }
 
 function normalizeVtuberModelConfig(value) {
@@ -5032,6 +5137,47 @@ function secureWebContents(contents) {
   contents.on("will-attach-webview", event => event.preventDefault());
 }
 
+function createApplicationMenu() {
+  const template = [
+    {
+      label: "Project Blue",
+      submenu: [
+        { label: "Show Control Center", click: () => showControl() },
+        { label: "Minimize Control Center", click: () => controlWindow?.hide() },
+        { type: "separator" },
+        { label: "Quit Blue", click: () => {
+          quitting = true;
+          app.quit();
+        } }
+      ]
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload", label: "Reload Control Center" },
+        { role: "resetZoom", label: "Actual Size" },
+        { role: "zoomIn", label: "Zoom In" },
+        { role: "zoomOut", label: "Zoom Out" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "Toggle Full Screen" }
+      ]
+    },
+    {
+      label: "Help",
+      submenu: [
+        { label: "Open Blue Folder", click: () => shell.openPath(appRoot) },
+        { label: "Run diagnostics in Chat", click: () => {
+          showControl();
+          controlWindow?.webContents.executeJavaScript(
+            'selectTab("chat"); document.querySelector("#chatRunAudit")?.click();'
+          ).catch(() => {});
+        } }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createPetWindow() {
   const area = screen.getPrimaryDisplay().workArea;
   const petWidth = Math.min(330, area.width);
@@ -5054,6 +5200,7 @@ function createPetWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      devTools: false,
       backgroundThrottling: false
     }
   });
@@ -5082,9 +5229,9 @@ function createPetWindow() {
 function createControlWindow() {
   controlWindow = new BrowserWindow({
     title: "Project Blue Control Center",
-    width: 1040,
+    width: 1280,
     height: 780,
-    minWidth: 520,
+    minWidth: 900,
     minHeight: 540,
     show: true,
     frame: true,
@@ -5095,7 +5242,8 @@ function createControlWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      devTools: false
     }
   });
   secureWebContents(controlWindow.webContents);
@@ -5110,6 +5258,12 @@ function createControlWindow() {
     });
     scheduleControlRecovery(`renderer-${details.reason || "gone"}`);
   });
+  controlWindow.on("focus", () => {
+    if (petWindow && !petWindow.isDestroyed()) petWindow.setAlwaysOnTop(false);
+  });
+  controlWindow.on("blur", () => {
+    if (petWindow && !petWindow.isDestroyed()) petWindow.setAlwaysOnTop(true);
+  });
   controlWindow.on("unresponsive", () => scheduleControlRecovery("unresponsive"));
   controlWindow.on("close", event => {
     if (!quitting) {
@@ -5121,6 +5275,7 @@ function createControlWindow() {
 
 function showControl() {
   if (!controlWindow || controlWindow.isDestroyed()) createControlWindow();
+  if (petWindow && !petWindow.isDestroyed()) petWindow.setAlwaysOnTop(false);
   controlWindow.show();
   controlWindow.restore();
   controlWindow.focus();
@@ -6091,6 +6246,156 @@ function registerHandlers() {
       securityScanning = false;
     }
   });
+  trustedHandle("blue:control-audit", async () => auditControlCenter(__dirname));
+  trustedHandle("blue:bluemesh-status", async () => blueMeshStatusSummary());
+  trustedHandle("blue:bluemesh-token", async () => blueMesh(["token"], 10000));
+  trustedHandle("blue:bluemesh-preflight", async (_event, value) => blueMesh([
+    "preflight",
+    "--node-id", String(value?.nodeId || "adahn_pc"),
+    "--creator-id", String(value?.creatorId || "creator_adahn"),
+    "--peer", String(value?.peerUrl || "")
+  ], 10000));
+  trustedHandle("blue:bluemesh-smoke", async () => runBoundedProcess(
+    "python",
+    ["-m", "unittest", "discover", "-s", path.join(repoRoot, "tests"), "-p", "test_blue_mesh_lan.py"],
+    {
+      cwd: repoRoot,
+      windowsHide: true,
+      shell: false,
+      env: blueMeshEnvironment()
+    },
+    { timeoutMs: 60000, maxOutputBytes: 2097152 }
+  ));
+  trustedHandle("blue:bluemesh-open-docs", async () => {
+    const docsPath = path.join(repoRoot, "docs", "BlueMeshLAN.md");
+    const error = await shell.openPath(docsPath);
+    if (error) throw new Error(error);
+    return "Opened BlueMesh LAN docs.";
+  });
+  trustedHandle("blue:streaming-status", async () => ({
+    config: sanitizeStreamingConfig(streamingConfig),
+    platforms: streamingPlatformCatalog(),
+    showFormats: streamShowCatalog(),
+    autonomyLevels: streamingAutonomyCatalog(),
+    policy: streamingPolicySummary(streamingConfig),
+    preflight: buildStreamingPreflight(streamingConfig),
+    chatGuide: streamingChatGuide(streamingConfig),
+    obs: {
+      websocketUrl: streamingConfig.obsUrl,
+      passwordStored: false,
+      sceneChangesRequireApproval: true
+    },
+    chat: {
+      twitch: "planned official EventSub/chat reader",
+      youtube: "planned official liveChatMessages reader",
+      discord: "existing approved bot channel",
+      tokensStored: false
+    }
+  }));
+  trustedHandle("blue:streaming-config-save", async (_event, value) => {
+    streamingConfig = sanitizeStreamingConfig({
+      ...streamingConfig,
+      ...(value || {}),
+      updatedAt: new Date().toISOString()
+    });
+    saveJsonAtomic(streamingConfigPath, streamingConfig);
+    appendActivity(activityLedgerPath, "settings", "Streaming Studio nonsecret settings saved", {
+      platform: streamingConfig.platform,
+      streamMode: streamingConfig.streamMode,
+      avatarBackend: streamingConfig.avatarBackend
+    });
+    return {
+      config: streamingConfig,
+      message: "Streaming settings saved. OBS passwords, stream keys, and platform tokens are session-only and were not written to disk."
+    };
+  });
+  trustedHandle("blue:streaming-obs-check", async (_event, value) => {
+    const config = normalizeStreamingConfig({ ...streamingConfig, ...(value || {}) });
+    const result = await obsRequest({
+      url: config.obsUrl,
+      password: value?.password,
+      requestType: "GetVersion"
+    });
+    appendActivity(activityLedgerPath, "streaming", "OBS websocket connection checked", {
+      obsUrl: config.obsUrl,
+      obsVersion: result.obsVersion,
+      obsWebSocketVersion: result.obsWebSocketVersion
+    });
+    return result;
+  });
+  trustedHandle("blue:streaming-obs-scenes", async (_event, value) => {
+    const config = normalizeStreamingConfig({ ...streamingConfig, ...(value || {}) });
+    const result = await obsRequest({
+      url: config.obsUrl,
+      password: value?.password,
+      requestType: "GetSceneList"
+    });
+    return {
+      currentProgramSceneName: result.currentProgramSceneName,
+      scenes: Array.isArray(result.scenes) ? result.scenes.map(scene => scene.sceneName).filter(Boolean) : []
+    };
+  });
+  trustedHandle("blue:streaming-obs-switch-scene", async (_event, value) => {
+    if (!value?.approved) throw new Error("Scene changes require approval in the Streaming panel.");
+    const sceneName = String(value?.sceneName || "").trim();
+    if (!sceneName) throw new Error("Choose a scene first.");
+    const config = normalizeStreamingConfig({ ...streamingConfig, ...(value || {}) });
+    const result = await obsRequest({
+      url: config.obsUrl,
+      password: value?.password,
+      requestType: "SetCurrentProgramScene",
+      requestData: { sceneName }
+    });
+    appendActivity(activityLedgerPath, "streaming", "Approved OBS scene switch", { sceneName });
+    return { ...result, message: `Switched OBS Program scene to "${sceneName}".` };
+  });
+  trustedHandle("blue:streaming-plan", async (_event, value) => {
+    const kind = String(value?.kind || "obs").trim();
+    const config = normalizeStreamingConfig({ ...streamingConfig, ...(value?.config || {}) });
+    if (kind === "preflight") {
+      return JSON.stringify(buildStreamingPreflight(config), null, 2);
+    }
+    if (kind === "showrunner") {
+      return [
+        buildStreamerRunOfShow({
+          config,
+          showFormat: value?.showFormat || "neuro_chat",
+          autonomyLevel: value?.autonomyLevel || (config.independentMode ? "independent_guarded" : "assistant")
+        }),
+        "",
+        "Show plan:",
+        JSON.stringify(buildStreamerShowPlan({
+          config,
+          showFormat: value?.showFormat || "neuro_chat",
+          autonomyLevel: value?.autonomyLevel || (config.independentMode ? "independent_guarded" : "assistant")
+        }), null, 2)
+      ].join("\n");
+    }
+    if (kind === "moderation") {
+      const sample = value?.message || "Sample chat message for Blue's stream moderation guard.";
+      return [
+        streamingChatGuide(config),
+        "",
+        "Sample moderation decision:",
+        JSON.stringify(moderateChatMessage(sample, config), null, 2)
+      ].join("\n");
+    }
+    if (kind === "adult") {
+      return [
+        buildStreamingPlan("adult", config),
+        "",
+        "Adult-platform readiness:",
+        JSON.stringify(adultPlatformReadiness(config), null, 2),
+        "",
+        streamingPolicySummary(config)
+      ].join("\n");
+    }
+    return [
+      buildStreamingPlan(kind, config),
+      "",
+      streamingPolicySummary(config)
+    ].join("\n");
+  });
   trustedHandle("blue:open-project", async () => {
     const error = await shell.openPath(appRoot);
     if (error) throw new Error(error);
@@ -6259,6 +6564,7 @@ app.whenReady().then(() => {
     desktopVersion,
     automaticCapture: false
   });
+  createApplicationMenu();
   registerHandlers();
   createPetWindow();
   createControlWindow();
