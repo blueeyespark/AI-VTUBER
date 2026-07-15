@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 function inspectCompanion(engine) {
   return {
@@ -7,6 +7,8 @@ function inspectCompanion(engine) {
     posture: engine.animation.state.posture,
     gesture: engine.animation.state.activity,
     expression: engine.emotion.expression(),
+    life: engine.life?.snapshot?.() || null,
+    procedural: engine.animation.state.procedural,
     attentionTarget: engine.attentionTarget,
     destination: engine.movement.destination,
     speed: Math.hypot(engine.movement.velocity.x, engine.movement.velocity.y),

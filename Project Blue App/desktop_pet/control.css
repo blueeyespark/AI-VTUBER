@@ -1309,6 +1309,144 @@ section[data-panel="system"].vscode-document-panel[hidden] {
   }
 }
 
+/* Streaming Studio: IDE editors, not a dashboard wall. */
+.streaming-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 22px !important;
+  overflow: auto;
+}
+
+.streaming-workbench[hidden] {
+  display: none !important;
+}
+
+.streaming-workbench h2,
+.streaming-workbench p {
+  margin: 0;
+}
+
+.editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.streaming-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  border: 1px solid var(--pb-border-soft, #294966);
+  background: #07111f;
+}
+
+.streaming-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--pb-border-soft, #294966);
+}
+
+.streaming-summary > div:last-child { border-right: 0; }
+.streaming-summary span { color: var(--pb-muted, #8eb6d4); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.streaming-summary strong { color: var(--pb-text, #e8f5ff); font-size: 14px; }
+
+.streaming-launcher {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--pb-border-soft, #294966);
+  background: var(--pb-border-soft, #294966);
+}
+
+.streaming-launcher button {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 70px !important;
+  padding: 12px 14px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #081422 !important;
+  text-align: left;
+}
+
+.streaming-launcher button:hover { background: #10253a !important; transform: none; }
+.streaming-launcher button strong { color: #dff4ff; }
+.streaming-launcher button span { color: #8eb6d4; font-size: 12px; font-weight: 400; }
+
+.streaming-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 16px;
+  padding: 14px;
+  border: 1px solid var(--pb-border-soft, #294966);
+  background: #07111f;
+}
+
+.streaming-form-grid label,
+.streaming-workbench > label {
+  display: grid;
+  gap: 6px;
+  color: #a9cbe3;
+  font-size: 12px;
+}
+
+.streaming-form-grid .check-row {
+  display: flex;
+  align-items: center;
+  margin: 0 !important;
+  min-height: 34px;
+}
+
+.streaming-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.streaming-toolbar button {
+  width: auto !important;
+  min-height: 32px !important;
+  padding: 5px 12px !important;
+}
+
+.streaming-workbench pre {
+  flex: 1 1 150px;
+  min-height: 120px;
+  max-height: 42vh;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.streaming-catalog {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--pb-border-soft, #294966);
+  background: #07111f;
+}
+
+.streaming-catalog details { border-bottom: 1px solid var(--pb-border-soft, #294966); }
+.streaming-catalog details:last-child { border-bottom: 0; }
+.streaming-catalog summary { padding: 9px 12px; cursor: pointer; color: #dff4ff; }
+.streaming-catalog table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.streaming-catalog th, .streaming-catalog td { padding: 7px 12px; border-top: 1px solid #19344d; text-align: left; }
+.streaming-catalog th { color: #79dfff; font-weight: 650; }
+.streaming-catalog tbody tr { cursor: pointer; }
+.streaming-catalog tbody tr:hover { background: #10253a; }
+
+@media (max-width: 900px) {
+  .streaming-summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .streaming-summary > div:nth-child(2) { border-right: 0; }
+  .editor-heading { align-items: flex-start; flex-direction: column; }
+}
+
 /* -------------------------------------------------------------------------
    Control Center vNext rebuild
    This is the new shell layer. It intentionally overrides the older patched

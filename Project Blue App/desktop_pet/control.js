@@ -49,6 +49,16 @@ let lastOcrText = "";
 let vtuberModels = [];
 let selectedStartupModel = "";
 let pendingDeepResearchTopic = "";
+let activeFileEditorSession = null;
+const fileEditorSessions = new Map();
+const fileEditorAlerts = new Map();
+const pinnedFileEditors = new Set();
+let previewFileEditorId = null;
+let editorUpdateTimer = null;
+let workspaceFileEntries = [];
+let workspaceFilesLoading = false;
+let recentWorkspaceFiles = [];
+let workspaceSnapshot = {};
 const shell = window.ProjectBlueShell;
 const activityBar = document.querySelector("#activityBar");
 const contextSidebar = document.querySelector("#contextSidebar");
@@ -57,27 +67,156 @@ const sidebarTitle = contextSidebar?.querySelector(".sidebar-title");
 const editorTabs = document.querySelector("#editorTabs");
 const bottomPanel = document.querySelector("#bottomPanel");
 const bottomPanelOutput = document.querySelector("#bottomPanelOutput");
+const bottomPanelViews = new Map(
+  [...document.querySelectorAll("[data-bottom-view]")].map(view => [view.dataset.bottomView, view])
+);
 const blueContextPanel = document.querySelector("#blueContextPanel");
 const blueContextCollapse = document.querySelector("#blueContextCollapse");
 const chatMoreActions = document.querySelector("#chatMoreActions");
 const chatMoreMenu = document.querySelector("#chatMoreMenu");
 const attachmentChips = document.querySelector("#attachmentChips");
-if (localStorage.getItem("blueFinalUiPassTabsInitialized") !== "true") {
-  localStorage.setItem("blueOpenEditors:workspace", "blue-chat");
-  localStorage.setItem("blueEditor:workspace", "blue-chat");
-  localStorage.setItem("blueFinalUiPassTabsInitialized", "true");
+const auxiliaryBar = document.querySelector("#auxiliaryBar");
+const auxChatMount = document.querySelector("#auxChatMount");
+const auxClose = document.querySelector("#auxClose");
+const blueChatSection = document.querySelector("[data-panel='workspace'][data-editor='blue-chat']");
+const AUX_COMPACT_BREAKPOINT = 1400;
+if (auxChatMount && blueChatSection) {
+  blueChatSection.removeAttribute("data-panel");
+  blueChatSection.removeAttribute("data-editor");
+  blueChatSection.classList.add("auxiliary-chat-editor", "active-editor");
+  auxChatMount.append(blueChatSection);
 }
+function isCompactWorkbench() {
+  return window.innerWidth <= AUX_COMPACT_BREAKPOINT;
+}
+function openAuxiliaryChat() {
+  document.body.classList.remove("aux-collapsed");
+  document.body.classList.toggle("aux-overlay-open", isCompactWorkbench());
+  localStorage.setItem("blueAuxiliaryCollapsed", "false");
+  applyLayoutPrefs();
+  prompt?.focus();
+}
+function closeAuxiliaryChat() {
+  document.body.classList.add("aux-collapsed");
+  document.body.classList.remove("aux-overlay-open");
+  localStorage.setItem("blueAuxiliaryCollapsed", "true");
+  applyLayoutPrefs();
+}
+if (localStorage.getItem("blueAuxiliaryCollapsed") === "true") document.body.classList.add("aux-collapsed");
+auxClose?.addEventListener("click", closeAuxiliaryChat);
+
+function clampLayout(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  return Math.max(min, Math.min(max, numeric));
+}
+
+function applyLayoutPrefs() {
+  layoutState.sidebarWidth = clampLayout(layoutState.sidebarWidth, 180, 360);
+  layoutState.auxWidth = clampLayout(layoutState.auxWidth, 300, 600);
+  layoutState.bottomHeight = clampLayout(layoutState.bottomHeight, 120, Math.floor(window.innerHeight * 0.55));
+  const compact = isCompactWorkbench();
+  document.body.classList.toggle("aux-compact", compact);
+  document.documentElement.style.setProperty("--sidebar-width", `${layoutState.sidebarWidth}px`);
+  document.documentElement.style.setProperty("--aux-width", compact ? "0px" : `${layoutState.auxWidth}px`);
+  document.documentElement.style.setProperty("--bottom-height", layoutState.bottomOpen ? `${layoutState.bottomHeight}px` : "0px");
+}
+
+function syncResponsiveWorkbench() {
+  const wasCompact = document.body.classList.contains("aux-compact");
+  const compact = isCompactWorkbench();
+  if (compact && !wasCompact) document.body.classList.remove("aux-overlay-open");
+  if (!compact) document.body.classList.remove("aux-overlay-open");
+  applyLayoutPrefs();
+}
+
+function persistLayoutPrefs() {
+  localStorage.setItem("blueSidebarWidth", String(layoutState.sidebarWidth));
+  localStorage.setItem("blueAuxiliaryWidth", String(layoutState.auxWidth));
+  localStorage.setItem("blueBottomPanelHeight", String(layoutState.bottomHeight));
+}
+
+function installResizeHandles() {
+  const make = (className, title) => {
+    let handle = document.querySelector(`.${className}`);
+    if (!handle) {
+      handle = document.createElement("div");
+      handle.className = `resize-handle ${className}`;
+      handle.title = title;
+      handle.setAttribute("role", "separator");
+      document.body.append(handle);
+    }
+    return handle;
+  };
+  const sidebarHandle = make("sidebar-resize", "Resize sidebar");
+  const auxHandle = make("aux-resize", "Resize Blue Chat");
+  const bottomHandle = make("bottom-resize", "Resize bottom panel");
+
+  const drag = (event, onMove) => {
+    event.preventDefault();
+    const move = moveEvent => { onMove(moveEvent); applyLayoutPrefs(); persistLayoutPrefs(); };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("is-resizing");
+    };
+    document.body.classList.add("is-resizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+  };
+  sidebarHandle.onpointerdown = event => drag(event, moveEvent => { layoutState.sidebarWidth = clampLayout(moveEvent.clientX - 48, 180, 360); });
+  auxHandle.onpointerdown = event => drag(event, moveEvent => { layoutState.auxWidth = clampLayout(window.innerWidth - moveEvent.clientX, 300, 600); document.body.classList.remove("aux-collapsed"); localStorage.setItem("blueAuxiliaryCollapsed", "false"); });
+  bottomHandle.onpointerdown = event => drag(event, moveEvent => { layoutState.bottomOpen = true; layoutState.bottomHeight = clampLayout(window.innerHeight - moveEvent.clientY - 24, 120, Math.floor(window.innerHeight * 0.55)); localStorage.setItem("blueBottomPanelOpen", "true"); document.body.classList.add("bottom-open"); if (bottomPanel) bottomPanel.hidden = false; });
+}
+
+function resetWorkbenchLayout() {
+  layoutState.sidebarWidth = 260;
+  layoutState.auxWidth = 400;
+  layoutState.bottomHeight = 220;
+  layoutState.bottomOpen = false;
+  localStorage.setItem("blueBottomPanelOpen", "false");
+  localStorage.setItem("blueAuxiliaryCollapsed", "false");
+  document.body.classList.remove("bottom-open", "aux-collapsed");
+  persistLayoutPrefs();
+  applyLayoutPrefs();
+  renderShell();
+}
+if (localStorage.getItem("blueWorkbenchBehaviorV1") !== "true") { localStorage.setItem("blueOpenEditors:workspace", "workspace-home"); localStorage.setItem("blueEditor:workspace", "workspace-home"); localStorage.setItem("blueBottomPanelOpen", "false"); localStorage.setItem("blueWorkbenchBehaviorV1", "true"); }
 const layoutState = {
   activeActivity: shell?.normalizeActivity(localStorage.getItem("blueControlActivity") || localStorage.getItem("blueControlTab") || "workspace") || "workspace",
   activeEditors: {},
   openEditors: {},
   bottomOpen: localStorage.getItem("blueBottomPanelOpen") === "true",
   bottomTab: localStorage.getItem("blueBottomPanelTab") || "output",
-  contextCollapsed: localStorage.getItem("blueContextCollapsed") === "true"
+  contextCollapsed: localStorage.getItem("blueContextCollapsed") === "true",
+  sidebarWidth: Number(localStorage.getItem("blueSidebarWidth") || 260),
+  auxWidth: Number(localStorage.getItem("blueAuxiliaryWidth") || 400),
+  bottomHeight: Number(localStorage.getItem("blueBottomPanelHeight") || 220)
 };
 
 function allActivityEditors(activityId) {
-  return shell?.editors?.[activityId] || [];
+  const editors = [...(shell?.editors?.[activityId] || [])];
+  if (activityId === "workspace") {
+    for (const [id, session] of fileEditorSessions) {
+      editors.push({ id, title: session.path.split("/").at(-1), closable: true, fileSession: true });
+    }
+  }
+  return editors;
+}
+
+function fileEditorId(session) { return `file:${session.id}`; }
+function isFileEditor(editorId) { return fileEditorSessions.has(editorId); }
+function rememberFileSession(session) {
+  const id = fileEditorId(session);
+  fileEditorSessions.set(id, session);
+  return id;
+}
+
+function pinFileEditor(editorId) {
+  if (!isFileEditor(editorId)) return;
+  pinnedFileEditors.add(editorId);
+  if (previewFileEditorId === editorId) previewFileEditorId = null;
+  renderEditorTabs();
 }
 
 function readOpenEditorIds(activityId) {
@@ -125,10 +264,13 @@ function renderActivityBar() {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.activity = activity.id;
-    button.title = activity.label;
-    button.setAttribute("aria-label", activity.label);
-    button.setAttribute("aria-selected", String(activity.id === layoutState.activeActivity));
-    button.innerHTML = activity.icon;
+    const label = activity.label || activity.id || "Project Blue";
+    const icon = activity.svgIcon || activity.icon || shell.activities[0]?.svgIcon || "";
+    button.title = activity.tooltip || label;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("aria-pressed", String(activity.id === layoutState.activeActivity));
+    button.tabIndex = activity.id === layoutState.activeActivity ? 0 : -1;
+    button.innerHTML = String(icon).includes("undefined") ? (shell.activities[0]?.svgIcon || "") : icon;
     button.onclick = () => selectTab(activity.id);
     activityBar.append(button);
   }
@@ -152,19 +294,224 @@ function renderSidebar() {
     open.append(row);
   }
   sidebarContent.append(open);
-  const items = (shell.sidebarItems?.[layoutState.activeActivity] || []).filter(item => item.toLowerCase() !== "open editors");
+  const groups = shell.sidebarGroups?.[layoutState.activeActivity]
+    || [{ title: activity?.label || "Tools", items: shell.sidebarItems?.[layoutState.activeActivity] || [] }];
+  for (const group of groups) {
+    const items = group.items.filter(item => {
+      const normalized = item.toLowerCase();
+      if (normalized === "open editors") return false;
+      if ((layoutState.activeActivity === "workspace" || layoutState.activeActivity === "explorer") && normalized === "project files") return false;
+      if (layoutState.activeActivity === "workspace" && normalized === "recent") return false;
+      return true;
+    });
+    if (!items.length) continue;
+    const section = document.createElement("div");
+    section.className = "tree-section";
+    section.innerHTML = `<div class="tree-heading">${group.title}</div>`;
+    for (const item of items) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "tree-row";
+      row.textContent = item;
+      row.onclick = () => openSidebarItem(item);
+      section.append(row);
+    }
+    sidebarContent.append(section);
+  }
+  if (layoutState.activeActivity === "workspace" || layoutState.activeActivity === "explorer") {
+    sidebarContent.append(renderWorkspaceFileTree());
+    if (layoutState.activeActivity === "workspace") sidebarContent.append(renderRecentWorkspaceFiles());
+    if (!workspaceFileEntries.length && !workspaceFilesLoading) queueMicrotask(refreshWorkspaceFileTree);
+    if (!recentWorkspaceFiles.length) queueMicrotask(refreshRecentWorkspaceFiles);
+  }
+}
+
+function renderRecentWorkspaceFiles() {
   const section = document.createElement("div");
-  section.className = "tree-section";
-  section.innerHTML = `<div class="tree-heading">${activity?.label || "Tools"}</div>`;
-  for (const item of items) {
+  section.className = "tree-section recent-file-tree";
+  const heading = document.createElement("div");
+  heading.className = "tree-heading";
+  heading.textContent = "Recent Files";
+  section.append(heading);
+  for (const item of recentWorkspaceFiles.slice(0, 12)) {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "tree-row";
-    row.textContent = item;
-    row.onclick = () => openSidebarItem(item);
+    row.className = "tree-row project-file-row file";
+    row.title = item.path;
+    row.textContent = item.path.split("/").at(-1);
+    row.onclick = () => openWorkspaceFile(item.path);
+    row.ondblclick = event => { event.preventDefault(); openWorkspaceFile(item.path, { pinned: true }); };
     section.append(row);
   }
-  sidebarContent.append(section);
+  if (!recentWorkspaceFiles.length) {
+    const empty = document.createElement("div");
+    empty.className = "tree-empty";
+    empty.textContent = "No recent files yet.";
+    section.append(empty);
+  }
+  return section;
+}
+
+async function refreshRecentWorkspaceFiles() {
+  try { recentWorkspaceFiles = await window.bluePet.editorRecent(); }
+  catch { recentWorkspaceFiles = []; }
+  if (layoutState.activeActivity === "workspace") renderSidebar();
+}
+
+async function loadWorkspaceSettings() {
+  const ignored = document.querySelector("#workspaceIgnoredPaths");
+  const recentLimit = document.querySelector("#workspaceRecentLimit");
+  const status = document.querySelector("#workspaceSettingsStatus");
+  if (!ignored || !recentLimit || !status) return;
+  try {
+    const settings = await window.bluePet.editorSettings();
+    ignored.value = (settings.ignoredPaths || []).join("\n");
+    recentLimit.value = settings.maxRecentFiles || 24;
+    status.textContent = `Loaded ${settings.ignoredPaths?.length || 0} ignored paths. Recent-file limit: ${settings.maxRecentFiles || 24}.`;
+    await renderWorkspaceRoots();
+  } catch (error) {
+    status.textContent = `Could not load workspace settings: ${error.message}`;
+  }
+}
+
+async function renderWorkspaceRoots() {
+  const list = document.querySelector("#workspaceRootsList");
+  if (!list) return;
+  const roots = await window.bluePet.editorRoots();
+  list.replaceChildren();
+  for (const root of roots) {
+    const row = document.createElement("div");
+    row.className = "settings-list-row";
+    const label = document.createElement("span");
+    label.textContent = `${root.name}${root.primary ? " (primary)" : ""}`;
+    row.append(label);
+    if (!root.primary) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.textContent = "Remove";
+      remove.onclick = async () => { await window.bluePet.editorRootRemove(root.id); await renderWorkspaceRoots(); await refreshWorkspaceFileTree(); };
+      row.append(remove);
+    }
+    list.append(row);
+  }
+}
+
+async function addWorkspaceRoot() {
+  const result = await window.bluePet.editorRootAdd();
+  if (result?.canceled) return;
+  workspaceSnapshot = {};
+  await Promise.all([renderWorkspaceRoots(), refreshWorkspaceFileTree()]);
+  document.querySelector("#workspaceSettingsStatus").textContent = `Workspace now has ${result.roots.length} trusted roots.`;
+}
+
+async function rebuildSymbolIndex() {
+  const result = await window.bluePet.editorSymbols({ limit: 5000 });
+  const status = document.querySelector("#workspaceSettingsStatus");
+  if (status) status.textContent = `Indexed ${result.symbols.length} JavaScript, TypeScript, and Python symbols${result.truncated ? " (limit reached)" : ""}.`;
+  showBottomPanel("output");
+  if (bottomPanelOutput) bottomPanelOutput.textContent = result.symbols.slice(0, 500).map(item => `${item.name}  ${item.path}:${item.line}:${item.column}`).join("\n") || "No supported symbols found.";
+}
+
+async function pollWorkspaceChanges() {
+  try {
+    const result = await window.bluePet.editorWorkspaceChanges(workspaceSnapshot);
+    workspaceSnapshot = result.snapshot || {};
+    if (!result.changes?.length) return;
+    await refreshWorkspaceFileTree();
+    const message = result.changes.slice(0, 20).map(item => `${item.type}: ${item.path}`).join("\n");
+    writeBottomPanel("activity", `Workspace changes detected:\n${message}`, { append: true, open: false });
+  } catch { /* bounded watcher retries on the next interval */ }
+}
+
+async function saveWorkspaceSettings() {
+  const ignored = document.querySelector("#workspaceIgnoredPaths");
+  const recentLimit = document.querySelector("#workspaceRecentLimit");
+  const status = document.querySelector("#workspaceSettingsStatus");
+  if (!ignored || !recentLimit || !status) return;
+  const ignoredPaths = ignored.value.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean);
+  const maxRecentFiles = Math.max(1, Math.min(100, Number(recentLimit.value) || 24));
+  try {
+    const settings = await window.bluePet.editorSettingsUpdate({ ignoredPaths, maxRecentFiles });
+    workspaceFileEntries = [];
+    recentWorkspaceFiles = [];
+    await Promise.all([refreshWorkspaceFileTree(), refreshRecentWorkspaceFiles()]);
+    ignored.value = (settings.ignoredPaths || []).join("\n");
+    recentLimit.value = settings.maxRecentFiles;
+    status.textContent = `Saved. The Explorer now ignores ${settings.ignoredPaths.length} paths and keeps ${settings.maxRecentFiles} recent files.`;
+  } catch (error) {
+    status.textContent = `Settings were not saved: ${error.message}`;
+  }
+}
+
+function renderWorkspaceFileTree() {
+  const section = document.createElement("div");
+  section.className = "tree-section project-file-tree";
+  const heading = document.createElement("div");
+  heading.className = "tree-heading tree-heading-action";
+  heading.innerHTML = "<span>Project Files</span>";
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.className = "tree-refresh";
+  refresh.title = "Refresh project files";
+  refresh.setAttribute("aria-label", "Refresh project files");
+  refresh.textContent = "↻";
+  refresh.onclick = refreshWorkspaceFileTree;
+  heading.append(refresh);
+  section.append(heading);
+  if (workspaceFilesLoading) {
+    const loading = document.createElement("div");
+    loading.className = "tree-empty";
+    loading.textContent = "Indexing workspace…";
+    section.append(loading);
+    return section;
+  }
+  if (!workspaceFileEntries.length) {
+    const empty = document.createElement("div");
+    empty.className = "tree-empty";
+    empty.textContent = "No files indexed yet.";
+    section.append(empty);
+    return section;
+  }
+  for (const item of workspaceFileEntries) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `tree-row project-file-row ${item.type}`;
+    row.style.setProperty("--tree-depth", String(Math.min(item.depth || 0, 8)));
+    row.title = item.path;
+    const glyph = document.createElement("span");
+    glyph.className = "tree-glyph";
+    glyph.textContent = item.type === "folder" || item.type === "root" ? "▸" : "";
+    const name = document.createElement("span");
+    name.textContent = item.name;
+    row.append(glyph, name);
+    if (item.type === "file") {
+      row.onclick = () => openWorkspaceFile(item.path);
+      row.ondblclick = event => {
+        event.preventDefault();
+        openWorkspaceFile(item.path, { pinned: true });
+      };
+    }
+    else row.setAttribute("aria-disabled", "true");
+    section.append(row);
+  }
+  return section;
+}
+
+async function refreshWorkspaceFileTree() {
+  if (workspaceFilesLoading) return;
+  workspaceFilesLoading = true;
+  renderSidebar();
+  try {
+    const result = await window.bluePet.editorFiles({ limit: 600 });
+    workspaceFileEntries = result?.entries || [];
+  } catch (error) {
+    workspaceFileEntries = [];
+    writeBottomPanel("problems", `Workspace file index failed: ${error.message}`);
+  } finally {
+    workspaceFilesLoading = false;
+    renderSidebar();
+  }
 }
 
 function renderEditorTabs() {
@@ -173,9 +520,29 @@ function renderEditorTabs() {
   for (const editor of getActivityEditors(layoutState.activeActivity)) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `editor-tab${editor.id === currentEditor() ? " active" : ""}`;
+    button.className = `editor-tab${editor.id === currentEditor() ? " active" : ""}${editor.id === previewFileEditorId ? " preview" : ""}`;
     button.dataset.editor = editor.id;
-    button.innerHTML = `<span>${editor.title}</span>${editor.closable ? '<span class="editor-close" aria-hidden="true">x</span>' : ''}`;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(editor.id === currentEditor()));
+    button.tabIndex = editor.id === currentEditor() ? 0 : -1;
+    const session = fileEditorSessions.get(editor.id);
+    const title = document.createElement("span");
+    title.textContent = session?.path.split("/").at(-1) || editor.title;
+    button.append(title);
+    if (session?.dirty) {
+      const dirty = document.createElement("span");
+      dirty.className = "dirty-dot";
+      dirty.title = "Unsaved changes";
+      dirty.textContent = "*";
+      button.append(dirty);
+    }
+    if (editor.closable) {
+      const close = document.createElement("span");
+      close.className = "editor-close";
+      close.setAttribute("aria-hidden", "true");
+      close.textContent = "x";
+      button.append(close);
+    }
     button.onclick = event => {
       if (event.target.classList.contains("editor-close")) {
         closeEditor(editor.id);
@@ -184,6 +551,7 @@ function renderEditorTabs() {
       }
     };
     button.onauxclick = event => { if (event.button === 1) closeEditor(editor.id); };
+    button.ondblclick = () => pinFileEditor(editor.id);
     button.oncontextmenu = event => {
       event.preventDefault();
       const action = window.prompt("Tab action: close, close others, close right, pin", "close");
@@ -193,18 +561,33 @@ function renderEditorTabs() {
   }
 }
 
-function closeEditor(editorId) {
+async function closeEditor(editorId) {
   const activity = layoutState.activeActivity;
   const editor = allActivityEditors(activity).find(item => item.id === editorId);
   if (!editor?.closable) return;
+  const fileSession = fileEditorSessions.get(editorId);
+  if (fileSession) {
+    let discard = false;
+    if (fileSession.dirty) {
+      discard = window.confirm(`Discard unsaved changes to ${fileSession.path}?`);
+      if (!discard) return;
+    }
+    const closed = await window.bluePet.editorClose({ sessionId: fileSession.id, discard });
+    if (!closed?.ok) return;
+    fileEditorSessions.delete(editorId);
+    pinnedFileEditors.delete(editorId);
+    if (previewFileEditorId === editorId) previewFileEditorId = null;
+    if (activeFileEditorSession?.id === fileSession.id) activeFileEditorSession = null;
+  }
   const openIds = getOpenEditorIds(activity);
   const index = openIds.indexOf(editorId);
   if (index >= 0) openIds.splice(index, 1);
   if (!openIds.length) openIds.push(shell.defaultEditor(activity));
   if (currentEditor(activity) === editorId) layoutState.activeEditors[activity] = openIds[Math.max(0, index - 1)] || openIds[0];
   persistOpenEditors(activity);
-  renderShell();
-  selectTab(activity, layoutState.activeEditors[activity]);
+  const nextEditor = layoutState.activeEditors[activity];
+  if (!isFileEditor(nextEditor)) resetFileEditorUi();
+  selectTab(activity, nextEditor);
 }
 
 function handleTabAction(editorId, action) {
@@ -218,8 +601,11 @@ function handleTabAction(editorId, action) {
   } else if (normalized.includes("right") && index >= 0) {
     layoutState.openEditors[activity] = openIds.filter((id, itemIndex) => itemIndex <= index || !allActivityEditors(activity).find(editor => editor.id === id)?.closable);
   } else if (normalized.includes("pin")) {
-    const editor = allActivityEditors(activity).find(item => item.id === editorId);
-    if (editor) editor.closable = false;
+    if (isFileEditor(editorId)) pinFileEditor(editorId);
+    else {
+      const editor = allActivityEditors(activity).find(item => item.id === editorId);
+      if (editor) editor.closable = false;
+    }
   } else if (normalized.includes("close")) {
     closeEditor(editorId);
     return;
@@ -234,15 +620,34 @@ function showBottomPanel(tab = layoutState.bottomTab) {
   localStorage.setItem("blueBottomPanelOpen", "true");
   localStorage.setItem("blueBottomPanelTab", tab);
   document.body.classList.add("bottom-open");
+  applyLayoutPrefs();
   if (bottomPanel) bottomPanel.hidden = false;
-  for (const button of document.querySelectorAll("[data-bottom-tab]")) button.classList.toggle("active", button.dataset.bottomTab === tab);
-  if (bottomPanelOutput) bottomPanelOutput.textContent = `${tab} panel ready.`;
+  for (const button of document.querySelectorAll("[data-bottom-tab]")) {
+    const active = button.dataset.bottomTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  }
+  for (const [name, view] of bottomPanelViews) {
+    const active = name === tab;
+    view.hidden = !active;
+    view.classList.toggle("active", active);
+  }
+}
+
+function writeBottomPanel(tab, message, { append = false, open = true } = {}) {
+  const view = bottomPanelViews.get(tab) || bottomPanelOutput;
+  if (!view) return;
+  const text = String(message ?? "");
+  view.textContent = append && view.textContent ? `${view.textContent}\n${text}` : text;
+  if (open) showBottomPanel(tab);
 }
 
 function hideBottomPanel() {
   layoutState.bottomOpen = false;
   localStorage.setItem("blueBottomPanelOpen", "false");
   document.body.classList.remove("bottom-open");
+  applyLayoutPrefs();
   if (bottomPanel) bottomPanel.hidden = true;
 }
 
@@ -253,23 +658,112 @@ function renderBottomPanel() {
 
 function selectTab(value, editorValue) {
   const activity = shell?.normalizeActivity(value) || "workspace";
-  const editor = ensureEditorOpen(activity, shell?.normalizeEditor(activity, editorValue || value) || "blue-chat");
+  if (editorValue === "blue-chat" || value === "blue-chat" || value === "chat") {
+    openAuxiliaryChat();
+    editorValue = activity === "workspace" ? (localStorage.getItem("blueEditor:workspace") || "workspace-home") : editorValue;
+  }
+  const requestedEditor = editorValue || value;
+  const normalizedEditor = activity === "workspace" && isFileEditor(requestedEditor)
+    ? requestedEditor
+    : shell?.normalizeEditor(activity, requestedEditor) || "workspace-home";
+  const editor = ensureEditorOpen(activity, normalizedEditor);
+  if (activeFileEditorSession && (!isFileEditor(editor) || fileEditorSessions.get(editor)?.id !== activeFileEditorSession.id)) {
+    clearTimeout(editorUpdateTimer);
+    pushEditorUpdate();
+  }
   layoutState.activeActivity = activity;
   layoutState.activeEditors[activity] = editor;
   localStorage.setItem("blueControlActivity", activity);
   localStorage.setItem(`blueEditor:${activity}`, editor);
+  const visibleEditor = isFileEditor(editor) ? "file-preview" : editor;
   for (const panel of document.querySelectorAll("[data-panel]")) {
     const matchesActivity = panel.dataset.panel === activity;
     const panelEditor = panel.dataset.editor || editor;
-    const matchesEditor = panelEditor === editor;
+    const matchesEditor = panelEditor === visibleEditor;
     const active = matchesActivity && matchesEditor;
     panel.hidden = !active;
     panel.classList.toggle("active-editor", active);
   }
+  if (isFileEditor(editor)) applyFileEditorSession(fileEditorSessions.get(editor));
+  else activeFileEditorSession = null;
+  if (activity === "workspace" && editor === "workspace-settings") loadWorkspaceSettings();
   renderShell();
   updateBlueContext();
+  updateAliveDashboard?.();
+  if (activity === "streaming") queueMicrotask(() => refreshStreamingWorkbench().catch(error => setWorkbenchOutput(error.message || String(error))));
   document.querySelector(".editor-surface")?.scrollTo({ top: 0, behavior: "auto" });
 }
+
+function setDashboardText(id, value) {
+  const element = document.querySelector(`#${id}`);
+  if (element) element.textContent = value || "Not available";
+}
+
+function collectWorkbenchAwareness() {
+  const activeActivity = layoutState.activeActivity || "workspace";
+  const editor = currentEditor?.() || "workspace-home";
+  const conversation = conversationSelect?.selectedOptions?.[0]?.textContent || "Blue Desktop Pet";
+  return {
+    project: "Project Blue",
+    activeActivity,
+    editor,
+    conversation,
+    blueMesh: document.querySelector("#footerBlueMesh")?.textContent || "BlueMesh: installed",
+    discord: footerDiscord?.textContent || "Discord: disconnected",
+    obs: document.querySelector("#footerObs")?.textContent || "OBS: disconnected",
+    security: document.querySelector("#footerSecurity")?.textContent || "Security: not scanned",
+    model: document.querySelector("#footerModel")?.textContent || "Model: local/foundation"
+  };
+}
+
+function updateAliveDashboard(extra = {}) {
+  const awareness = { ...collectWorkbenchAwareness(), ...extra };
+  setDashboardText("dashSession", awareness.conversation);
+  setDashboardText("dashTasks", awareness.activeActivity === "run" ? "Task view is open" : "No task selected");
+  setDashboardText("dashStreaming", awareness.obs.replace(/^OBS:\s*/i, "OBS "));
+  setDashboardText("dashBlueMesh", awareness.blueMesh.replace(/^BlueMesh:\s*/i, ""));
+  setDashboardText("dashHealth", awareness.security.replace(/^Security:\s*/i, ""));
+  setDashboardText("dashResearch", awareness.activeActivity === "research" ? "Research lab active" : "Ready for questions");
+  setDashboardText("dashBackground", document.body.classList.contains("bottom-open") ? "Bottom panel active" : "Idle");
+  setDashboardText("dashPet", awareness.pet || "Present, calm idle");
+  setDashboardText("dashFiles", awareness.editor === "file-preview" ? "File preview open" : "Open Explorer to inspect");
+  setDashboardText("dashProgress", awareness.progress || "Workbench ready");
+  const suggestion = awareness.suggestion || (awareness.activeActivity === "workspace"
+    ? "I can inspect recent changes, scan files, or prepare streaming."
+    : `I see ${awareness.activeActivity}. Want me to summarize this area?`);
+  setDashboardText("dashSuggestions", suggestion);
+  setDashboardText("aliveFocus", `${awareness.activeActivity} / ${awareness.editor}`);
+  setDashboardText("aliveMood", awareness.activeActivity === "streaming" ? "Showtime" : awareness.activeActivity === "diagnostics" ? "Curious" : "Attentive");
+  const notice = document.querySelector("#proactiveNotice");
+  if (notice) notice.textContent = suggestion;
+  setDashboardText("ctxSuggestions", suggestion);
+}
+
+async function refreshAliveGitSummary() {
+  setDashboardText("dashGit", "Reading Git...");
+  try {
+    const result = await window.bluePet.workspaceGit();
+    const files = result?.data?.files || [];
+    const branch = result?.data?.branch || "current branch";
+    const summary = files.length ? `${files.length} changed file(s) on ${branch}` : `No changed files on ${branch}`;
+    setDashboardText("dashGit", summary);
+    updateAliveDashboard({ suggestion: files.length ? `${files.length} files changed. Want a summary?` : "Git is clean. Good moment to keep building." });
+    return result;
+  } catch (error) {
+    setDashboardText("dashGit", `Git unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+document.querySelector("#dashGitRefresh")?.addEventListener("click", refreshAliveGitSummary);
+document.querySelector("#dashFunctionCheck")?.addEventListener("click", async () => {
+  setDashboardText("dashProgress", "Checking functions...");
+  const result = await window.bluePet.controlAudit();
+  setDashboardText("dashProgress", result?.ok ? "Function audit passed" : "Function audit needs attention");
+  updateAliveDashboard({ suggestion: result?.ok ? "All controls are wired. We can keep building." : "I found UI wiring issues. Open Diagnostics?" });
+  showBottomPanel("output");
+});
+updateAliveDashboard();
 
 function renderShell() {
   renderActivityBar();
@@ -278,23 +772,504 @@ function renderShell() {
   renderBottomPanel();
 }
 
+
+function renderPreIntoEditor(editorId, text) {
+  const panel = document.querySelector(`[data-editor="${editorId}"]`);
+  const pre = panel?.querySelector("pre");
+  if (pre) pre.textContent = text || "No data.";
+}
+
+const editorElements = {
+  path: document.querySelector("#editorPath"), content: document.querySelector("#editorContent"),
+  status: document.querySelector("#editorStatus"), breadcrumbs: document.querySelector("#editorBreadcrumbs"),
+  save: document.querySelector("#editorSave"), undo: document.querySelector("#editorUndo"),
+  redo: document.querySelector("#editorRedo"), compare: document.querySelector("#editorCompare"),
+  find: document.querySelector("#editorFind"), replace: document.querySelector("#editorReplace")
+};
+let monacoEditor = null;
+let monacoSplitEditor = null;
+let monacoDiffEditor = null;
+let monacoModel = null;
+let monacoDiffModels = [];
+let suppressMonacoChange = false;
+const languageButtonIds = ["lspCompletion", "lspHover", "lspSignature", "lspDefinition", "lspReferences", "lspRename", "lspFormat", "lspCodeActions", "lspSymbols", "lspWorkspaceSymbols"];
+let lspVersion = 1;
+
+function editorValue() { return monacoEditor ? monacoEditor.getValue() : (editorElements.content?.value || ""); }
+function setEditorValue(value, language = "plaintext") {
+  const next = String(value ?? "");
+  if (monacoEditor && window.monaco) {
+    suppressMonacoChange = true;
+    if (!monacoModel) {
+      monacoModel = window.monaco.editor.createModel(next, language);
+      monacoEditor.setModel(monacoModel);
+      monacoSplitEditor?.setModel(monacoModel);
+    } else {
+      window.monaco.editor.setModelLanguage(monacoModel, language || "plaintext");
+      if (monacoModel.getValue() !== next) monacoModel.setValue(next);
+    }
+    suppressMonacoChange = false;
+  }
+  if (editorElements.content) editorElements.content.value = next;
+}
+function focusEditorRange(index, length = 0) {
+  if (monacoEditor && monacoModel) {
+    const start = monacoModel.getPositionAt(index);
+    const end = monacoModel.getPositionAt(index + length);
+    monacoEditor.setSelection({ startLineNumber: start.lineNumber, startColumn: start.column, endLineNumber: end.lineNumber, endColumn: end.column });
+    monacoEditor.revealPositionInCenter(start);
+    monacoEditor.focus();
+    return;
+  }
+  editorElements.content?.focus();
+  editorElements.content?.setSelectionRange(index, index + length);
+}
+function scheduleEditorUpdate() {
+  clearTimeout(editorUpdateTimer);
+  editorUpdateTimer = setTimeout(pushEditorUpdate, 180);
+}
+function lspSupported(session = activeFileEditorSession) { return ["javascript", "javascriptreact", "typescript", "typescriptreact", "python"].includes(session?.language); }
+function lspCursor() {
+  const cursor = monacoEditor?.getPosition();
+  if (cursor) return { line: cursor.lineNumber, character: cursor.column };
+  const value = editorElements.content?.value || ""; const offset = editorElements.content?.selectionStart || 0; const before = value.slice(0, offset).split("\n"); return { line: before.length, character: before.at(-1).length + 1 };
+}
+function lspPayload(extra = {}) { const cursor = lspCursor(); return { path: activeFileEditorSession?.path, language: activeFileEditorSession?.language, text: editorValue(), version: ++lspVersion, ...cursor, ...extra }; }
+function setLspState(text, ready = false) { const state = document.querySelector("#lspServerState"); if (state) { state.textContent = text; state.dataset.ready = String(ready); } }
+function setLspResult(value, title = "Language result") { const result = document.querySelector("#lspResult"); if (!result) return; result.hidden = false; result.textContent = `${title}\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`; }
+function applyLocalTextEdits(edits = []) {
+  if (!monacoModel || !window.monaco) return false;
+  monacoEditor.executeEdits("project-blue-lsp", edits.map(edit => ({ range: new window.monaco.Range(edit.range.start.line + 1, edit.range.start.character + 1, edit.range.end.line + 1, edit.range.end.character + 1), text: edit.newText || "", forceMoveMarkers: true })));
+  scheduleEditorUpdate(); return true;
+}
+async function ensureLanguageDocument() {
+  if (!activeFileEditorSession || !lspSupported()) throw new Error("Open a Python, JavaScript, or TypeScript file first.");
+  setLspState("Language server: starting..."); const opened = await window.bluePet.lspOpen(lspPayload()); setLspState(`Language server: ${opened.serverId} ready`, true); return opened;
+}
+function normalizeLspLocations(result) { const rows = Array.isArray(result) ? result : result ? [result] : []; return rows.map(item => ({ uri: item.uri || item.targetUri, range: item.range || item.targetSelectionRange || item.targetRange })).filter(item => item.uri && item.range); }
+async function openLspLocation(result) {
+  const locations = normalizeLspLocations(result); if (!locations.length) throw new Error("No source location was returned.");
+  const first = locations[0]; const filePath = decodeURIComponent(new URL(first.uri).pathname.replace(/^\/(?:[A-Za-z]:)/, value => value.slice(1))).replace(/\//g, "\\");
+  await openWorkspaceFile(filePath, { pinned: true }); const line = first.range.start.line + 1; const column = first.range.start.character + 1; if (monacoEditor) { monacoEditor.setPosition({ lineNumber: line, column }); monacoEditor.revealPositionInCenter({ lineNumber: line, column }); }
+  if (locations.length > 1) setLspResult(locations, `${locations.length} locations`);
+}
+async function runLsp(method, title) { try { await ensureLanguageDocument(); const result = await window.bluePet[method](lspPayload()); setLspResult(result ?? "No result.", title); return result; } catch (error) { setLspResult(error.message, `${title} failed`); throw error; } }
+function initializeMonacoEditor() {
+  if (!window.require?.config) return;
+  window.require.config({ paths: { vs: "node_modules/monaco-editor/min/vs" } });
+  window.require(["vs/editor/editor.main"], () => {
+    const primary = document.querySelector("#monacoEditorPrimary");
+    const secondary = document.querySelector("#monacoEditorSecondary");
+    if (!primary || !secondary) return;
+    const options = { theme: "vs-dark", automaticLayout: true, fontFamily: "Cascadia Code, Consolas, monospace", fontSize: 13, minimap: { enabled: true }, scrollBeyondLastLine: false, tabSize: 2, insertSpaces: true };
+    monacoEditor = window.monaco.editor.create(primary, { ...options, readOnly: true, value: "" });
+    monacoSplitEditor = window.monaco.editor.create(secondary, { ...options, readOnly: true, value: "" });
+    monacoEditor.onDidChangeModelContent(() => { if (!suppressMonacoChange) scheduleEditorUpdate(); });
+    document.querySelector("#editorGroups")?.classList.add("monaco-ready");
+    if (activeFileEditorSession) applyFileEditorSession(activeFileEditorSession);
+  }, error => setEditorStatus(`Monaco failed to load; fallback editor remains available: ${error.message}`, "warning"));
+}
+initializeMonacoEditor();
+
+function setEditorStatus(message, kind = "") {
+  if (!editorElements.status) return;
+  editorElements.status.textContent = message;
+  editorElements.status.dataset.kind = kind;
+}
+
+function resetFileEditorUi() {
+  if (editorElements.content) editorElements.content.disabled = true;
+  setEditorValue("");
+  monacoEditor?.updateOptions({ readOnly: true });
+  monacoSplitEditor?.updateOptions({ readOnly: true });
+  if (editorElements.breadcrumbs) editorElements.breadcrumbs.textContent = "Workspace / No file open";
+  for (const id of ["editorSave", "editorUndo", "editorRedo", "editorCompare", "editorSplit", "editorFindRun", "editorReplaceOne", "editorReplaceAll"])
+    if (document.querySelector(`#${id}`)) document.querySelector(`#${id}`).disabled = true;
+  setEditorStatus("No file open. Paths are confined to the Project Blue workspace.");
+  for (const id of languageButtonIds) document.querySelector(`#${id}`)?.setAttribute("disabled", "");
+  setLspState("Language server: idle");
+  renderEditorTabs();
+}
+
+function applyFileEditorSession(session, message) {
+  rememberFileSession(session);
+  activeFileEditorSession = session;
+  setEditorValue(session.content ?? editorValue(), session.language);
+  editorElements.content.disabled = false;
+  monacoEditor?.updateOptions({ readOnly: false });
+  monacoSplitEditor?.updateOptions({ readOnly: false });
+  editorElements.path.value = session.path || editorElements.path.value;
+  editorElements.breadcrumbs.textContent = `Workspace / ${session.path}`;
+  editorElements.save.disabled = !session.dirty;
+  editorElements.undo.disabled = !session.canUndo;
+  editorElements.redo.disabled = !session.canRedo;
+  editorElements.compare.disabled = false;
+  document.querySelector("#editorSplit").disabled = false;
+  for (const id of ["editorFindRun", "editorReplaceOne", "editorReplaceAll"])
+    document.querySelector(`#${id}`).disabled = false;
+  for (const id of languageButtonIds) document.querySelector(`#${id}`).disabled = !lspSupported(session);
+  if (lspSupported(session)) ensureLanguageDocument().catch(error => setLspState(`Language server: ${error.message}`)); else setLspState("Language server: unsupported file type");
+  setEditorStatus(message || `${session.language} · version ${session.version}${session.dirty ? " · modified" : " · saved"}`);
+  renderEditorTabs();
+}
+
+async function openWorkspaceFile(filePath = editorElements.path?.value, options = {}) {
+  const requested = String(filePath || "").trim();
+  if (!requested) return setEditorStatus("Enter a workspace-relative file path.", "warning");
+  try {
+    const normalizedPath = requested.replace(/\\/g, "/").toLowerCase();
+    const existing = [...fileEditorSessions.entries()].find(([, session]) => session.path.toLowerCase() === normalizedPath);
+    if (existing) {
+      if (options.pinned) pinFileEditor(existing[0]);
+      selectTab("workspace", existing[0]);
+      setEditorStatus(`Already open: ${existing[1].path}`);
+      return existing[1];
+    }
+    if (previewFileEditorId && fileEditorSessions.has(previewFileEditorId)) {
+      const previewSession = fileEditorSessions.get(previewFileEditorId);
+      if (previewSession.dirty) pinFileEditor(previewFileEditorId);
+      else {
+        await window.bluePet.editorClose({ sessionId: previewSession.id, discard: true });
+        fileEditorSessions.delete(previewFileEditorId);
+        fileEditorAlerts.delete(previewFileEditorId);
+        const openIds = getOpenEditorIds("workspace");
+        const previewIndex = openIds.indexOf(previewFileEditorId);
+        if (previewIndex >= 0) openIds.splice(previewIndex, 1);
+        persistOpenEditors("workspace");
+        previewFileEditorId = null;
+      }
+    }
+    const session = await window.bluePet.editorOpen(requested);
+    const editorId = rememberFileSession(session);
+    if (options.pinned) pinnedFileEditors.add(editorId);
+    else previewFileEditorId = editorId;
+    ensureEditorOpen("workspace", editorId);
+    selectTab("workspace", editorId);
+    applyFileEditorSession(session, `Opened ${session.path}`);
+    refreshRecentWorkspaceFiles();
+    return session;
+  } catch (error) {
+    setEditorStatus(`Open failed: ${error.message}`, "error");
+  }
+}
+
+async function pushEditorUpdate() {
+  if (!activeFileEditorSession) return;
+  const sessionId = activeFileEditorSession.id;
+  const content = editorValue();
+  try {
+    const session = await window.bluePet.editorUpdate({ sessionId, content });
+    rememberFileSession(session);
+    if (session.dirty) pinFileEditor(fileEditorId(session));
+    if (activeFileEditorSession?.id === sessionId) applyFileEditorSession(session);
+    else renderEditorTabs();
+  } catch (error) { setEditorStatus(`Edit failed: ${error.message}`, "error"); }
+}
+
+async function pollOpenFileChanges() {
+  for (const [editorId, knownSession] of [...fileEditorSessions]) {
+    try {
+      const result = await window.bluePet.editorStatus({ sessionId: knownSession.id, reloadClean: true });
+      if (result?.session) fileEditorSessions.set(editorId, result.session);
+      if (result?.reloaded) {
+        fileEditorAlerts.delete(editorId);
+        if (activeFileEditorSession?.id === knownSession.id) {
+          applyFileEditorSession(result.session, `Reloaded ${result.session.path} after an external change.`);
+        } else renderEditorTabs();
+        continue;
+      }
+      const alertKey = result?.deleted ? "deleted" : result?.conflict ? "conflict" : "";
+      if (!alertKey) {
+        fileEditorAlerts.delete(editorId);
+        continue;
+      }
+      if (fileEditorAlerts.get(editorId) === alertKey) continue;
+      fileEditorAlerts.set(editorId, alertKey);
+      const message = result.deleted
+        ? `${knownSession.path} was deleted outside Blue. Your open tab remains available for review.`
+        : `${knownSession.path} changed outside Blue while this tab has unsaved edits. Compare before saving.`;
+      writeBottomPanel("problems", message);
+      if (activeFileEditorSession?.id === knownSession.id) setEditorStatus(message, "warning");
+    } catch (error) {
+      if (!/session not found/i.test(error.message)) setEditorStatus(`File monitoring failed: ${error.message}`, "error");
+    }
+  }
+}
+
+async function saveWorkspaceFile(overwriteExternal = false) {
+  if (!activeFileEditorSession) return;
+  await pushEditorUpdate();
+  const result = await window.bluePet.editorSave({ sessionId: activeFileEditorSession.id, overwriteExternal });
+  if (result?.conflict) {
+    writeBottomPanel("problems", `Save conflict: ${activeFileEditorSession.path} changed outside Blue. Compare before overwriting.`);
+    setEditorStatus("Save blocked: the file changed outside Blue.", "warning");
+    if (window.confirm("The file changed outside Blue. Overwrite the external version with this editor content?")) return saveWorkspaceFile(true);
+    return;
+  }
+  applyFileEditorSession(result.session, `Saved ${result.session.path}`);
+}
+
+async function editorHistory(action) {
+  if (!activeFileEditorSession) return;
+  const session = await window.bluePet[action](activeFileEditorSession.id);
+  applyFileEditorSession(session);
+}
+
+function editorFindOptions(replaceAll = true) {
+  return {
+    matchCase: document.querySelector("#editorMatchCase")?.checked,
+    wholeWord: document.querySelector("#editorWholeWord")?.checked,
+    regex: document.querySelector("#editorRegex")?.checked,
+    replaceAll
+  };
+}
+
+async function findInEditor() {
+  if (!activeFileEditorSession) return;
+  try {
+    const results = await window.bluePet.editorFind({ sessionId: activeFileEditorSession.id, query: editorElements.find.value, options: editorFindOptions() });
+    setEditorStatus(`${results.length} match${results.length === 1 ? "" : "es"} found.`);
+    if (results[0]) focusEditorRange(results[0].index, results[0].length);
+  } catch (error) { setEditorStatus(`Find failed: ${error.message}`, "error"); }
+}
+
+async function replaceInEditor(replaceAll) {
+  if (!activeFileEditorSession) return;
+  try {
+    const result = await window.bluePet.editorReplace({
+      sessionId: activeFileEditorSession.id, query: editorElements.find.value,
+      replacement: editorElements.replace.value, options: editorFindOptions(replaceAll)
+    });
+    applyFileEditorSession(result.session, `${result.replacements} replacement${result.replacements === 1 ? "" : "s"}.`);
+  } catch (error) { setEditorStatus(`Replace failed: ${error.message}`, "error"); }
+}
+
+document.querySelector("#editorOpen")?.addEventListener("click", () => openWorkspaceFile());
+editorElements.path?.addEventListener("keydown", event => { if (event.key === "Enter") openWorkspaceFile(); });
+editorElements.content?.addEventListener("input", scheduleEditorUpdate);
+document.querySelector("#editorSave")?.addEventListener("click", () => saveWorkspaceFile());
+document.querySelector("#editorUndo")?.addEventListener("click", () => editorHistory("editorUndo"));
+document.querySelector("#editorRedo")?.addEventListener("click", () => editorHistory("editorRedo"));
+document.querySelector("#editorFindRun")?.addEventListener("click", findInEditor);
+document.querySelector("#editorReplaceOne")?.addEventListener("click", () => replaceInEditor(false));
+document.querySelector("#editorReplaceAll")?.addEventListener("click", () => replaceInEditor(true));
+document.querySelector("#lspCompletion")?.addEventListener("click", async () => { const result = await runLsp("lspCompletion", "Completions").catch(() => null); if (monacoEditor && result) monacoEditor.trigger("project-blue", "editor.action.triggerSuggest", {}); });
+document.querySelector("#lspHover")?.addEventListener("click", () => runLsp("lspHover", "Hover").catch(() => {}));
+document.querySelector("#lspSignature")?.addEventListener("click", async () => { await runLsp("lspSignature", "Signature help").catch(() => {}); monacoEditor?.trigger("project-blue", "editor.action.triggerParameterHints", {}); });
+document.querySelector("#lspDefinition")?.addEventListener("click", async () => { const result = await runLsp("lspDefinition", "Definition").catch(() => null); if (result) openLspLocation(result).catch(error => setLspResult(error.message, "Definition failed")); });
+document.querySelector("#lspReferences")?.addEventListener("click", () => runLsp("lspReferences", "References").catch(() => {}));
+document.querySelector("#lspSymbols")?.addEventListener("click", () => runLsp("lspDocumentSymbols", "Document symbols").catch(() => {}));
+document.querySelector("#lspWorkspaceSymbols")?.addEventListener("click", async () => { const query = window.prompt("Find a workspace symbol", "") ?? ""; try { setLspResult(await window.bluePet.lspWorkspaceSymbols(query), "Workspace symbols"); } catch (error) { setLspResult(error.message, "Workspace symbols failed"); } });
+document.querySelector("#lspFormat")?.addEventListener("click", async () => { const edits = await runLsp("lspFormatting", "Formatting edits").catch(() => null); if (edits && applyLocalTextEdits(edits)) setEditorStatus("Language-server formatting applied locally. Save to write it to disk."); });
+document.querySelector("#lspCodeActions")?.addEventListener("click", () => runLsp("lspCodeActions", "Code actions").catch(() => {}));
+document.querySelector("#lspRename")?.addEventListener("click", async () => {
+  const newName = window.prompt("Rename symbol to:", ""); if (!newName) return;
+  try { await ensureLanguageDocument(); const edit = await window.bluePet.lspRename(lspPayload({ newName })); setLspResult(edit, "Rename preview"); if (!edit || !window.confirm("Apply this language-server rename? Project Blue will create local backups first.")) return; const applied = await window.bluePet.lspApplyEdit({ edit, approved: true }); setLspResult(applied, "Rename applied"); if (activeFileEditorSession) { await window.bluePet.editorClose({ sessionId: activeFileEditorSession.id, discard: true }); const path = activeFileEditorSession.path; activeFileEditorSession = null; await openWorkspaceFile(path, { pinned: true }); } } catch (error) { setLspResult(error.message, "Rename failed"); }
+});
+document.querySelector("#editorCompare")?.addEventListener("click", async () => {
+  if (!activeFileEditorSession) return;
+  const language = activeFileEditorSession.language;
+  const diff = await window.bluePet.editorDiff(activeFileEditorSession.id);
+  selectTab("git", "diff-review");
+  const host = document.querySelector("#monacoDiffEditor");
+  if (window.monaco && host) {
+    monacoDiffEditor ||= window.monaco.editor.createDiffEditor(host, { theme: "vs-dark", automaticLayout: true, readOnly: true, renderSideBySide: true });
+    monacoDiffModels.forEach(model => model.dispose());
+    monacoDiffModels = [window.monaco.editor.createModel(diff.before, language), window.monaco.editor.createModel(diff.after, language)];
+    monacoDiffEditor.setModel({ original: monacoDiffModels[0], modified: monacoDiffModels[1] });
+    host.classList.add("monaco-ready");
+  } else {
+    document.querySelector("#diffEditorFallback").textContent = diff.changes.map(change => `${change.kind === "add" ? "+" : change.kind === "remove" ? "-" : " "} ${change.line}: ${change.value}`).join("\n");
+  }
+});
+document.querySelector("#editorSplit")?.addEventListener("click", () => {
+  const groups = document.querySelector("#editorGroups");
+  groups?.classList.toggle("split");
+  const split = groups?.classList.contains("split");
+  document.querySelector("#monacoEditorSecondary").hidden = !split;
+  monacoEditor?.layout();
+  monacoSplitEditor?.layout();
+  setEditorStatus(split ? "Split editor group opened." : "Split editor group closed.");
+});
+document.querySelector("#editorRecover")?.addEventListener("click", async () => {
+  try {
+    const records = await window.bluePet.editorRecovery();
+    if (!records.length) return setEditorStatus("No unsaved recovery snapshots were found.");
+    const choices = records.map((item, index) => `${index + 1}. ${item.path}`).join("\n");
+    const selected = window.prompt(`Choose a recovery snapshot by number:\n${choices}`, "1");
+    const record = records[Number(selected) - 1];
+    if (!record) return setEditorStatus("Recovery cancelled.");
+    const session = await window.bluePet.editorRestore(record.path);
+    const editorId = rememberFileSession(session);
+    pinnedFileEditors.add(editorId);
+    if (previewFileEditorId === editorId) previewFileEditorId = null;
+    ensureEditorOpen("workspace", editorId);
+    selectTab("workspace", editorId);
+    applyFileEditorSession(session, `Recovered unsaved work for ${session.path}`);
+  } catch (error) { setEditorStatus(`Recovery failed: ${error.message}`, "error"); }
+});
+window.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s" && activeFileEditorSession) {
+    event.preventDefault(); saveWorkspaceFile();
+  }
+});
+setInterval(pollOpenFileChanges, 2000);
+setInterval(pollWorkspaceChanges, 4000);
+pollWorkspaceChanges();
+
+function formatTreeResult(result) {
+  const entries = result?.data?.entries || [];
+  if (!entries.length) return "No workspace files returned yet.";
+  return entries.slice(0, 120).map(item => `${"  ".repeat(item.depth || 0)}${item.type === "folder" ? "▸" : ""} ${item.path}${item.type === "folder" ? "/" : ""}`).join("\n");
+}
+
+async function loadWorkspaceTree() {
+  selectTab("workspace", "file-preview");
+  renderPreIntoEditor("file-preview", "Loading real Project Blue workspace tree...");
+  try {
+    const result = await window.bluePet.workspaceAgent("/files");
+    renderPreIntoEditor("file-preview", formatTreeResult(result));
+  } catch (error) {
+    renderPreIntoEditor("file-preview", `Workspace tree unavailable: ${error.message}`);
+  }
+}
+
+let gitState = null;
+function selectedGitPaths() { return [...document.querySelectorAll(".git-file-select:checked")].map(input => input.value); }
+function renderGitState(state) {
+  gitState = state;
+  document.querySelector("#gitBranch").textContent = `Branch: ${state.branch || "detached"}`;
+  document.querySelector("#gitUpstream").textContent = state.upstream || "No upstream";
+  document.querySelector("#gitCleanState").textContent = state.clean ? "Working tree clean" : `${state.files.length} changed | ${state.conflicts.length} conflicts`;
+  const root = document.querySelector("#gitChangeList"); root.replaceChildren();
+  for (const file of state.files) {
+    const row = document.createElement("label"); row.className = "git-change-row";
+    const check = document.createElement("input"); check.type = "checkbox"; check.className = "git-file-select"; check.value = file.path;
+    const code = document.createElement("span"); code.className = "git-code"; code.textContent = file.conflict ? "UU" : file.untracked ? "??" : `${file.index}${file.worktree}`;
+    const name = document.createElement("span"); name.className = "git-path"; name.textContent = file.path; name.title = file.path;
+    row.append(check, code, name); row.onclick = () => { document.querySelector("#gitDetails").textContent = `${file.path}\nIndex: ${file.index}\nWorktree: ${file.worktree}\n${file.conflict ? "MERGE CONFLICT - manual review required" : file.deleted ? "Deleted" : file.untracked ? "Untracked" : "Modified"}`; }; root.append(row);
+  }
+  if (!state.files.length) root.textContent = "No changes.";
+}
+async function loadGitState() {
+  selectTab("git", "source-control");
+  try {
+    const [state, branches] = await Promise.all([window.bluePet.workspaceGit(), window.bluePet.gitBranches()]); renderGitState(state);
+    const select = document.querySelector("#gitBranchSelect"); select.replaceChildren();
+    for (const branch of branches) { const option = document.createElement("option"); option.value = branch.name; option.textContent = `${branch.current ? "* " : ""}${branch.name}${branch.upstream ? ` -> ${branch.upstream}` : ""}`; option.selected = branch.current; select.append(option); }
+  } catch (error) { document.querySelector("#gitDetails").textContent = `Git state unavailable: ${error.message}`; }
+}
+
+async function gitSelectedAction(action) {
+  const files = selectedGitPaths(); if (!files.length) throw new Error("Select at least one changed file.");
+  const result = await action(files); renderGitState(result); return result;
+}
+async function approvedGitAction(action) {
+  const approval = document.querySelector("#gitApproval"); if (!approval?.checked) throw new Error("Check the approval box first.");
+  const result = await action(); approval.checked = false; if (result?.status) renderGitState(result.status); return result;
+}
+
+async function runWorkbenchSearch(query, replacementPreview = false) {
+  const searchText = String(query || document.querySelector("#workbenchSearchInput")?.value || commandSearch?.value || "").trim();
+  selectTab("search", "search-results");
+  const resultsRoot = document.querySelector("#workbenchSearchResults");
+  if (resultsRoot) resultsRoot.textContent = searchText ? `Searching for ${searchText}...` : "Type a search query first.";
+  if (!searchText) return;
+  try {
+    const options = {
+      regex: document.querySelector("#workbenchSearchRegex")?.checked,
+      matchCase: document.querySelector("#workbenchSearchCase")?.checked,
+      wholeWord: document.querySelector("#workbenchSearchWord")?.checked,
+      include: document.querySelector("#workbenchSearchInclude")?.value,
+      exclude: document.querySelector("#workbenchSearchExclude")?.value,
+      limit: 1000
+    };
+    const replacement = document.querySelector("#workbenchReplaceInput")?.value || "";
+    const result = replacementPreview
+      ? await window.bluePet.editorReplacePreview({ query: searchText, replacement, options })
+      : await window.bluePet.editorWorkspaceSearch({ query: searchText, options });
+    renderWorkspaceSearchResults(result, replacementPreview);
+  } catch (error) {
+    if (resultsRoot) resultsRoot.textContent = `Search unavailable: ${error.message}`;
+  }
+}
+
+function renderWorkspaceSearchResults(result, replacementPreview = false) {
+  const root = document.querySelector("#workbenchSearchResults");
+  if (!root) return;
+  root.replaceChildren();
+  const summary = document.createElement("div");
+  summary.className = "tree-heading";
+  summary.textContent = `${result.matches || 0} matches in ${result.files?.length || 0} files${result.truncated ? " (limit reached)" : ""}`;
+  root.append(summary);
+  for (const file of result.files || []) {
+    const group = document.createElement("details");
+    group.open = true;
+    const heading = document.createElement("summary");
+    heading.textContent = `${file.path} (${file.results.length})`;
+    group.append(heading);
+    for (const match of file.results) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "tree-row search-match-row";
+      row.textContent = replacementPreview
+        ? `${match.line}:${match.column}  ${match.before}  ->  ${match.after}`
+        : `${match.line}:${match.column}  ${match.preview.trim()}`;
+      row.onclick = async () => {
+        const session = await openWorkspaceFile(file.path, { pinned: true });
+        if (!session || !editorElements.content) return;
+        const lines = editorValue().split(/\r?\n/);
+        const offset = lines.slice(0, Math.max(0, match.line - 1)).reduce((total, line) => total + line.length + 1, 0) + Math.max(0, match.column - 1);
+        focusEditorRange(offset, match.length || 0);
+      };
+      group.append(row);
+    }
+    root.append(group);
+  }
+  if (!result.files?.length) root.append(document.createTextNode("No matches found."));
+}
 function openSidebarItem(label) {
   const text = String(label || "").toLowerCase();
-  if (text.includes("conversation") || text.includes("editor") || text.includes("chat")) return selectTab("workspace", "blue-chat");
-  if (text.includes("research") || text.includes("learning")) return selectTab("workspace", "research-lab");
-  if (text.includes("idea")) return selectTab("workspace", "idea-lab");
+  if (layoutState.activeActivity === "streaming") {
+    const streamingEditors = {
+      "obs": "obs",
+      "scenes": "scenes",
+      "stream setup": "stream-setup",
+      "platforms": "platforms",
+      "chat": "stream-chat",
+      "moderation": "moderation",
+      "titles": "titles",
+      "avatar output": "avatar-output"
+    };
+    if (streamingEditors[text]) return selectTab("streaming", streamingEditors[text]);
+  }
+  if (text.includes("conversation") || text.includes("chat")) { openAuxiliaryChat(); return selectTab("workspace", "workspace-home"); }
+  if (text.includes("project files") || text === "files") return loadWorkspaceTree();
+  if (text.includes("reference")) return runReferenceSearch();
+  if (text.includes("workspace settings")) return selectTab("workspace", "workspace-settings");
+  if (text.includes("editor")) return selectTab("workspace", "workspace-home");
+  if (text.includes("research") || text.includes("learning")) return selectTab("research", "research-lab");
+  if (text.includes("blueprint")) return selectTab("research", "blueprint-editor");
+  if (text.includes("generated") || text.includes("generator") || text.includes("live2d") || text.includes("3d model") || text.includes("audio")) return selectTab("generator", "generated-result");
+  if (text.includes("vrm animation") || text.includes("animation")) return selectTab("generator", "animation-generator");
+  if (text.includes("idea")) return selectTab("research", "idea-lab");
   if (text.includes("file") || text.includes("image") || text.includes("folder") || text.includes("ocr")) return selectTab("workspace", "file-preview");
   if (text.includes("voice") || text.includes("microphone")) return selectTab("ai", "voice");
   if (text.includes("avatar")) return selectTab("ai", "avatar");
   if (text.includes("movement")) return selectTab("ai", "movement");
   if (text.includes("local ai")) return selectTab("ai", "local-ai");
-  if (text.includes("security")) return selectTab("systems", "security");
-  if (text.includes("hardware")) return selectTab("systems", "hardware");
-  if (text.includes("function")) return selectTab("systems", "function-health");
-  if (text.includes("diagnostic")) return selectTab("tools", "diagnostics");
-  if (text.includes("doctor")) return selectTab("tools", "blue-doctor");
-  if (text.includes("pc info")) return selectTab("tools", "pc-actions");
-  if (text.includes("obs") || text.includes("scene")) return selectTab("streaming", "obs");
+  if (text.includes("security")) return selectTab("diagnostics", "security");
+  if (text.includes("hardware")) return selectTab("diagnostics", "pc-actions");
+  if (text.includes("function")) return selectTab("diagnostics", "function-health");
+  if (text.includes("diagnostic")) { showBottomPanel("activity"); return selectTab("diagnostics", "diagnostics"); }
+  if (text.includes("doctor")) return selectTab("diagnostics", "blue-doctor");
+  if (text.includes("pc info")) return selectTab("diagnostics", "pc-actions");
+  if (text.includes("obs")) return selectTab("streaming", "obs");
+  if (text.includes("scene")) return selectTab("streaming", "scenes");
+  if (text.includes("stream setup") || text.includes("show runner")) return selectTab("streaming", "stream-setup");
+  if (text.includes("stream chat")) return selectTab("streaming", "stream-chat");
+  if (text.includes("title")) return selectTab("streaming", "titles");
+  if (text.includes("avatar output")) return selectTab("streaming", "avatar-output");
   if (text.includes("platform")) return selectTab("streaming", "platforms");
   if (text.includes("moderation")) return selectTab("streaming", "moderation");
   if (text.includes("discord") || text.includes("command") || text.includes("allowed")) return selectTab("discord", "connection");
@@ -302,6 +1277,8 @@ function openSidebarItem(label) {
   if (text.includes("sync") || text.includes("pairing")) return selectTab("mesh", "sync");
   if (text.includes("conflict")) return selectTab("mesh", "conflicts");
   if (text.includes("ledger")) return selectTab("mesh", "ledger");
+  if (text.includes("changes") || text.includes("branch") || text.includes("commit") || text.includes("repository")) return loadGitState();
+  if (text.includes("search")) return runWorkbenchSearch();
 }
 
 for (const button of document.querySelectorAll("[data-open-activity]")) {
@@ -312,8 +1289,40 @@ for (const button of document.querySelectorAll("[data-open-editor]")) {
 }
 for (const button of document.querySelectorAll("[data-bottom-tab]")) {
   button.onclick = () => showBottomPanel(button.dataset.bottomTab);
+  button.onkeydown = event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll(".bottom-tabs [data-bottom-tab]")];
+    const index = tabs.indexOf(button);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[next]?.focus();
+    showBottomPanel(tabs[next]?.dataset.bottomTab);
+  };
 }
+document.querySelector("#bottomCollapse")?.addEventListener("click", hideBottomPanel);
+document.querySelector("#workbenchSearchRun")?.addEventListener("click", () => runWorkbenchSearch());
+document.querySelector("#workbenchReplacePreview")?.addEventListener("click", () => runWorkbenchSearch(undefined, true));
+document.querySelector("#workbenchSearchInput")?.addEventListener("keydown", event => {
+  if (event.key === "Enter") { event.preventDefault(); runWorkbenchSearch(); }
+});
+document.querySelector("#sourceRefreshGit")?.addEventListener("click", () => loadGitState());
+document.querySelector("#gitStageSelected")?.addEventListener("click", () => gitSelectedAction(files => window.bluePet.gitStage(files)).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#gitUnstageSelected")?.addEventListener("click", () => gitSelectedAction(files => window.bluePet.gitUnstage(files)).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#gitDiffSelected")?.addEventListener("click", async () => {
+  try { const files = selectedGitPaths(); if (files.length !== 1) throw new Error("Select exactly one file for diff review."); const file = gitState.files.find(item => item.path === files[0]); const result = await window.bluePet.gitDiff({ path: files[0], staged: file?.staged && !file?.modified }); ensureEditorOpen("git", "diff-review"); selectTab("git", "diff-review"); document.querySelector("#gitDiffTitle").textContent = files[0]; document.querySelector("#gitDiffOutput").textContent = result.diff || "No textual diff (the file may be untracked, binary, or unchanged in this side)."; } catch (error) { document.querySelector("#gitDetails").textContent = error.message; }
+});
+document.querySelector("#gitAttribution")?.addEventListener("click", async () => { try { const files = selectedGitPaths(); if (files.length !== 1) throw new Error("Select exactly one file."); const result = await window.bluePet.gitAttribution({ path: files[0] }); document.querySelector("#gitDetails").textContent = result.changes.length ? result.changes.map(item => `${item.hash} ${item.timestamp} ${item.author}\n  ${item.subject}`).join("\n") : "No committed attribution found."; } catch (error) { document.querySelector("#gitDetails").textContent = error.message; } });
+document.querySelector("#sourceHistoryGit")?.addEventListener("click", async () => { try { const history = await window.bluePet.gitHistory(60); document.querySelector("#gitDetails").textContent = history.map(item => `${item.shortHash} ${item.timestamp} ${item.author}\n  ${item.subject}`).join("\n"); } catch (error) { document.querySelector("#gitDetails").textContent = error.message; } });
+document.querySelector("#gitCommit")?.addEventListener("click", () => approvedGitAction(() => window.bluePet.gitCommit({ message: document.querySelector("#gitCommitMessage")?.value, approved: true })).then(result => { document.querySelector("#gitActionStatus").textContent = result.output || "Commit complete."; document.querySelector("#gitCommitMessage").value = ""; }).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#gitSwitch")?.addEventListener("click", () => approvedGitAction(() => window.bluePet.gitSwitch({ name: document.querySelector("#gitBranchSelect")?.value, approved: true })).then(() => loadGitState()).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#gitPull")?.addEventListener("click", () => approvedGitAction(() => window.bluePet.gitPull({ approved: true })).then(result => { document.querySelector("#gitActionStatus").textContent = result.output || "Already up to date."; }).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#gitPush")?.addEventListener("click", () => approvedGitAction(() => window.bluePet.gitPush({ approved: true })).then(result => { document.querySelector("#gitActionStatus").textContent = result.output || "Push complete."; }).catch(error => { document.querySelector("#gitActionStatus").textContent = error.message; }));
+document.querySelector("#resetLayout")?.addEventListener("click", resetWorkbenchLayout);
+installResizeHandles();
+applyLayoutPrefs();
+window.addEventListener("resize", syncResponsiveWorkbench);
 selectTab(layoutState.activeActivity, localStorage.getItem(`blueEditor:${layoutState.activeActivity}`));
+setTimeout(() => updateAliveDashboard?.(), 0);
 
 function updateBlueContext() {
   const set = (id, value) => { const element = document.querySelector(`#${id}`); if (element) element.textContent = value || "Not available"; };
@@ -322,7 +1331,7 @@ function updateBlueContext() {
   set("ctxProject", "Project Blue");
   set("ctxFile", currentEditor() ? `${currentEditor()}.editor` : "None selected");
   set("ctxMemory", conversationSelect?.selectedOptions?.[0]?.textContent || "Not available");
-  set("ctxSuggestions", layoutState.activeActivity === "workspace" ? "Use More Actions for research, OCR, and ideas" : "Idle");
+  set("ctxSuggestions", layoutState.activeActivity === "workspace" ? "I can inspect recent changes, scan files, or prepare streaming." : "I am tracking this workspace area.");
   set("ctxServices", `BlueMesh ${document.querySelector("#footerBlueMesh")?.textContent || "unknown"}; Discord ${footerDiscord?.textContent || "unknown"}; OBS ${document.querySelector("#footerObs")?.textContent || "unknown"}`);
   set("ctxConfidence", "Not available");
   set("ctxApprovals", "None");
@@ -348,49 +1357,281 @@ blueContextCollapse?.addEventListener("click", () => {
   layoutState.contextCollapsed = !layoutState.contextCollapsed;
   localStorage.setItem("blueContextCollapsed", String(layoutState.contextCollapsed));
   updateBlueContext();
+function setDashboardText(id, value) {
+  const element = document.querySelector(`#${id}`);
+  if (element) element.textContent = value || "Not available";
+}
+
+async function runReferenceSearch() {
+  const query = window.prompt("Find references to symbol or text:", "");
+  if (!query?.trim()) return;
+  selectTab("search", "search-results");
+  renderPreIntoEditor("search-results", `Finding references to ${query.trim()}...`);
+  try {
+    const rows = await window.bluePet.editorReferences({ query: query.trim(), options: { wholeWord: true, limit: 300 } });
+    renderPreIntoEditor("search-results", rows.length
+      ? rows.map(item => `${item.path}:${item.line}:${item.column}  ${item.preview}`).join("\n")
+      : `No references found for ${query.trim()}.`);
+  } catch (error) {
+    renderPreIntoEditor("search-results", `Reference search failed: ${error.message}`);
+  }
+}
+
+function collectWorkbenchAwareness() {
+  const activeActivity = layoutState.activeActivity || "workspace";
+  const editor = currentEditor?.() || "workspace-home";
+  const conversation = conversationSelect?.selectedOptions?.[0]?.textContent || "Blue Desktop Pet";
+  return {
+    project: "Project Blue",
+    activeActivity,
+    editor,
+    conversation,
+    blueMesh: document.querySelector("#footerBlueMesh")?.textContent || "BlueMesh: installed",
+    discord: footerDiscord?.textContent || "Discord: disconnected",
+    obs: document.querySelector("#footerObs")?.textContent || "OBS: disconnected",
+    security: document.querySelector("#footerSecurity")?.textContent || "Security: not scanned",
+    model: document.querySelector("#footerModel")?.textContent || "Model: local/foundation"
+  };
+}
+
+function updateAliveDashboard(extra = {}) {
+  const awareness = { ...collectWorkbenchAwareness(), ...extra };
+  setDashboardText("dashSession", awareness.conversation);
+  setDashboardText("dashTasks", awareness.activeActivity === "run" ? "Task view is open" : "No task selected");
+  setDashboardText("dashStreaming", awareness.obs.replace(/^OBS:\s*/i, "OBS "));
+  setDashboardText("dashBlueMesh", awareness.blueMesh.replace(/^BlueMesh:\s*/i, ""));
+  setDashboardText("dashHealth", awareness.security.replace(/^Security:\s*/i, ""));
+  setDashboardText("dashResearch", awareness.activeActivity === "research" ? "Research lab active" : "Ready for questions");
+  setDashboardText("dashBackground", document.body.classList.contains("bottom-open") ? "Bottom panel active" : "Idle");
+  setDashboardText("dashPet", awareness.pet || "Present, calm idle");
+  setDashboardText("dashFiles", awareness.editor === "file-preview" ? "File preview open" : "Open Explorer to inspect");
+  setDashboardText("dashProgress", awareness.progress || "Workbench ready");
+  const suggestion = awareness.suggestion || (awareness.activeActivity === "workspace"
+    ? "I can inspect recent changes, scan files, or prepare streaming."
+    : `I see ${awareness.activeActivity}. Want me to summarize this area?`);
+  setDashboardText("dashSuggestions", suggestion);
+  setDashboardText("aliveFocus", `${awareness.activeActivity} / ${awareness.editor}`);
+  setDashboardText("aliveMood", awareness.activeActivity === "streaming" ? "Showtime" : awareness.activeActivity === "diagnostics" ? "Curious" : "Attentive");
+  const notice = document.querySelector("#proactiveNotice");
+  if (notice) notice.textContent = suggestion;
+  setDashboardText("ctxSuggestions", suggestion);
+}
+
+async function refreshAliveGitSummary() {
+  setDashboardText("dashGit", "Reading Git...");
+  try {
+    const result = await window.bluePet.workspaceGit();
+    const files = result?.data?.files || [];
+    const branch = result?.data?.branch || "current branch";
+    const summary = files.length ? `${files.length} changed file(s) on ${branch}` : `No changed files on ${branch}`;
+    setDashboardText("dashGit", summary);
+    updateAliveDashboard({ suggestion: files.length ? `${files.length} files changed. Want a summary?` : "Git is clean. Good moment to keep building." });
+    return result;
+  } catch (error) {
+    setDashboardText("dashGit", `Git unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+document.querySelector("#dashGitRefresh")?.addEventListener("click", refreshAliveGitSummary);
+document.querySelector("#dashFunctionCheck")?.addEventListener("click", async () => {
+  setDashboardText("dashProgress", "Checking functions...");
+  const result = await window.bluePet.controlAudit();
+  setDashboardText("dashProgress", result?.ok ? "Function audit passed" : "Function audit needs attention");
+  updateAliveDashboard({ suggestion: result?.ok ? "All controls are wired. We can keep building." : "I found UI wiring issues. Open Diagnostics?" });
+  showBottomPanel("output");
+});
+updateAliveDashboard();
 });
 updateBlueContext();
+function setDashboardText(id, value) {
+  const element = document.querySelector(`#${id}`);
+  if (element) element.textContent = value || "Not available";
+}
+
+function collectWorkbenchAwareness() {
+  const activeActivity = layoutState.activeActivity || "workspace";
+  const editor = currentEditor?.() || "workspace-home";
+  const conversation = conversationSelect?.selectedOptions?.[0]?.textContent || "Blue Desktop Pet";
+  return {
+    project: "Project Blue",
+    activeActivity,
+    editor,
+    conversation,
+    blueMesh: document.querySelector("#footerBlueMesh")?.textContent || "BlueMesh: installed",
+    discord: footerDiscord?.textContent || "Discord: disconnected",
+    obs: document.querySelector("#footerObs")?.textContent || "OBS: disconnected",
+    security: document.querySelector("#footerSecurity")?.textContent || "Security: not scanned",
+    model: document.querySelector("#footerModel")?.textContent || "Model: local/foundation"
+  };
+}
+
+function updateAliveDashboard(extra = {}) {
+  const awareness = { ...collectWorkbenchAwareness(), ...extra };
+  setDashboardText("dashSession", awareness.conversation);
+  setDashboardText("dashTasks", awareness.activeActivity === "run" ? "Task view is open" : "No task selected");
+  setDashboardText("dashStreaming", awareness.obs.replace(/^OBS:\s*/i, "OBS "));
+  setDashboardText("dashBlueMesh", awareness.blueMesh.replace(/^BlueMesh:\s*/i, ""));
+  setDashboardText("dashHealth", awareness.security.replace(/^Security:\s*/i, ""));
+  setDashboardText("dashResearch", awareness.activeActivity === "research" ? "Research lab active" : "Ready for questions");
+  setDashboardText("dashBackground", document.body.classList.contains("bottom-open") ? "Bottom panel active" : "Idle");
+  setDashboardText("dashPet", awareness.pet || "Present, calm idle");
+  setDashboardText("dashFiles", awareness.editor === "file-preview" ? "File preview open" : "Open Explorer to inspect");
+  setDashboardText("dashProgress", awareness.progress || "Workbench ready");
+  const suggestion = awareness.suggestion || (awareness.activeActivity === "workspace"
+    ? "I can inspect recent changes, scan files, or prepare streaming."
+    : `I see ${awareness.activeActivity}. Want me to summarize this area?`);
+  setDashboardText("dashSuggestions", suggestion);
+  setDashboardText("aliveFocus", `${awareness.activeActivity} / ${awareness.editor}`);
+  setDashboardText("aliveMood", awareness.activeActivity === "streaming" ? "Showtime" : awareness.activeActivity === "diagnostics" ? "Curious" : "Attentive");
+  const notice = document.querySelector("#proactiveNotice");
+  if (notice) notice.textContent = suggestion;
+  setDashboardText("ctxSuggestions", suggestion);
+}
+
+async function refreshAliveGitSummary() {
+  setDashboardText("dashGit", "Reading Git...");
+  try {
+    const result = await window.bluePet.workspaceGit();
+    const files = result?.data?.files || [];
+    const branch = result?.data?.branch || "current branch";
+    const summary = files.length ? `${files.length} changed file(s) on ${branch}` : `No changed files on ${branch}`;
+    setDashboardText("dashGit", summary);
+    updateAliveDashboard({ suggestion: files.length ? `${files.length} files changed. Want a summary?` : "Git is clean. Good moment to keep building." });
+    return result;
+  } catch (error) {
+    setDashboardText("dashGit", `Git unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+document.querySelector("#dashGitRefresh")?.addEventListener("click", refreshAliveGitSummary);
+document.querySelector("#dashFunctionCheck")?.addEventListener("click", async () => {
+  setDashboardText("dashProgress", "Checking functions...");
+  const result = await window.bluePet.controlAudit();
+  setDashboardText("dashProgress", result?.ok ? "Function audit passed" : "Function audit needs attention");
+  updateAliveDashboard({ suggestion: result?.ok ? "All controls are wired. We can keep building." : "I found UI wiring issues. Open Diagnostics?" });
+  showBottomPanel("output");
+});
+updateAliveDashboard();
 
 const commandActions = [
-  { terms: ["new conversation", "new chat"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#newConversationName").focus(); } },
-  { terms: ["workspace", "chat", "talk"], run: () => selectTab("workspace", "blue-chat") },
-  { terms: ["research", "learning", "deep research"], run: () => selectTab("workspace", "research-lab") },
-  { terms: ["idea", "lab", "create"], run: () => selectTab("workspace", "idea-lab") },
-  { terms: ["files", "images", "folder", "ocr", "scan image"], run: () => selectTab("workspace", "file-preview") },
-  { terms: ["voice", "wake", "listen", "microphone"], run: () => selectTab("ai", "voice") },
-  { terms: ["presence", "privacy"], run: () => selectTab("ai", "presence") },
-  { terms: ["movement", "motion", "avatar", "expressions"], run: () => selectTab("ai", "avatar") },
-  { terms: ["local ai", "model", "ollama"], run: () => selectTab("ai", "local-ai") },
-  { terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("systems", "security") },
-  { terms: ["system", "health", "doctor", "diagnostics"], run: () => selectTab("tools", "diagnostics") },
-  { terms: ["obs", "stream", "streaming", "scenes"], run: () => selectTab("streaming", "streaming-studio") },
-  { terms: ["discord"], run: () => selectTab("discord", "connection") },
-  { terms: ["bluemesh", "mesh", "sync", "nodes"], run: () => selectTab("mesh", "identity") },
-  { terms: ["output", "problems", "activity log", "security log"], run: () => showBottomPanel("output") },
-  { terms: ["latest result", "show result", "preview result", "artifact"], run: () => { selectTab("workspace", "generated-result"); loadCurrentArtifact(); } },
-  { terms: ["share files"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#files").click(); } },
-  { terms: ["scan image", "image text"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#scanImage").click(); } }
+  { label: "Workspace: New conversation", category: "Workspace", terms: ["new conversation", "new chat"], run: () => { selectTab("workspace", "blue-chat"); document.querySelector("#newConversationName")?.focus(); } },
+  { label: "Workspace: Open Blue Chat", category: "Workspace", terms: ["workspace", "chat", "talk"], run: () => { selectTab("workspace", "workspace-home"); openAuxiliaryChat(); } },
+  { label: "Workspace: Open file preview", category: "Workspace", terms: ["files", "images", "folder", "preview"], run: () => selectTab("workspace", "file-preview") },
+  { label: "Workspace: Attach files", category: "Workspace", terms: ["share files", "attach"], run: () => { openAuxiliaryChat(); document.querySelector("#files")?.click(); } },
+  { label: "Workspace: Scan image text", category: "Workspace", terms: ["scan image", "image text", "ocr"], run: () => { openAuxiliaryChat(); document.querySelector("#scanImage")?.click(); } },
+  { label: "Search: Find in workspace", category: "Search", terms: ["search", "find", "workspace search"], run: () => selectTab("search", "search-results") },
+  { label: "Research: Open Research Lab", category: "Research", terms: ["research", "learning", "deep research"], run: () => selectTab("research", "research-lab") },
+  { label: "Research: Open Idea Lab", category: "Research", terms: ["idea", "lab", "create"], run: () => selectTab("research", "idea-lab") },
+  { label: "Source Control: Open Git", category: "Source Control", terms: ["git", "source control", "changes", "commit"], run: () => selectTab("git", "source-control") },
+  { label: "Run: Open Tasks", category: "Run", terms: ["tasks", "build", "run task"], run: () => selectTab("run", "tasks") },
+  { label: "Run: Open Terminal", category: "Run", terms: ["terminal", "shell", "console"], run: () => selectTab("run", "terminal-editor") },
+  { label: "Run: Open Debugger", category: "Run", terms: ["debug", "debugger", "breakpoints"], run: () => selectTab("run", "debugger") },
+  { label: "Run: Open Test Explorer", category: "Run", terms: ["test", "tests", "test explorer"], run: () => selectTab("run", "tests") },
+  { label: "AI: Open Voice and microphone", category: "AI & Presence", terms: ["voice", "wake", "listen", "microphone"], run: () => selectTab("ai", "voice") },
+  { label: "AI: Open Presence and privacy", category: "AI & Presence", terms: ["presence", "privacy"], run: () => selectTab("ai", "presence") },
+  { label: "AI: Open Avatar and movement", category: "AI & Presence", terms: ["movement", "motion", "avatar", "expressions"], run: () => selectTab("ai", "avatar") },
+  { label: "AI: Check local model", category: "AI & Presence", terms: ["local ai", "model", "ollama"], run: () => selectTab("ai", "local-ai") },
+  { label: "Systems: Read Windows security", category: "Systems", terms: ["security", "defender", "firewall", "virus"], run: () => selectTab("diagnostics", "security") },
+  { label: "Tools: Run Blue Doctor", category: "Tools", terms: ["system", "health", "doctor", "diagnostics"], run: () => selectTab("diagnostics", "blue-doctor") },
+  { label: "Tools: Open Extensions", category: "Tools", terms: ["extension", "extensions", "skills", "add-on"], run: () => selectTab("extensions", "skills") },
+  { label: "Streaming: Open studio", category: "Streaming", terms: ["obs", "stream", "streaming", "scenes"], run: () => selectTab("streaming", "streaming-studio") },
+  { label: "Streaming: Build AI run-of-show", category: "Streaming", terms: ["neuro", "show runner", "autonomy", "independent"], run: () => selectTab("streaming", "stream-setup") },
+  { label: "Streaming: Open scenes", category: "Streaming", terms: ["obs scenes", "switch scene"], run: () => selectTab("streaming", "scenes") },
+  { label: "Streaming: Platform catalog", category: "Streaming", terms: ["twitch", "youtube", "kick", "fansly", "onlyfans", "chaturbate", "adult"], run: () => selectTab("streaming", "platforms") },
+  { label: "Streaming: Chat and moderation", category: "Streaming", terms: ["stream chat", "moderation", "chat reader"], run: () => selectTab("streaming", "stream-chat") },
+  { label: "Streaming: Avatar output", category: "Streaming", terms: ["vrm", "live2d", "warudo", "avatar output"], run: () => selectTab("streaming", "avatar-output") },
+  { label: "Discord: Open connection", category: "Discord", terms: ["discord", "bot"], run: () => selectTab("discord", "connection") },
+  { label: "BlueMesh: Open identity and sync", category: "BlueMesh", terms: ["bluemesh", "mesh", "sync", "nodes"], run: () => selectTab("mesh", "identity") },
+  { label: "View: Show Output panel", category: "View", terms: ["output", "problems", "activity log", "security log", "panel"], run: () => showBottomPanel("output") },
+  { label: "Generator: Preview latest result", category: "Generator", terms: ["latest result", "show result", "preview result", "artifact"], run: () => { selectTab("generator", "generated-result"); loadCurrentArtifact(); } },
+  { label: "Preferences: Open Settings", category: "Preferences", terms: ["settings", "preferences", "configuration"], run: () => selectTab("settings", "settings") }
 ];
+
+const commandPalette = document.querySelector("#commandPalette");
+const commandPaletteResults = document.querySelector("#commandPaletteResults");
+let commandSelection = 0;
+let visibleCommands = [];
+
+function commandMatches(command, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = [command.label, command.category, ...command.terms].join(" ").toLowerCase();
+  return words.every(word => haystack.includes(word));
+}
+
+function closeCommandPalette(clear = false) {
+  if (commandPalette) commandPalette.hidden = true;
+  commandSearch?.setAttribute("aria-expanded", "false");
+  if (clear && commandSearch) commandSearch.value = "";
+}
+
+function renderCommandPalette() {
+  if (!commandPalette || !commandPaletteResults || !commandSearch) return;
+  const query = commandSearch.value.trim().replace(/^>/, "");
+  visibleCommands = commandActions.filter(command => commandMatches(command, query)).slice(0, 40);
+  commandSelection = Math.max(0, Math.min(commandSelection, visibleCommands.length - 1));
+  commandPaletteResults.replaceChildren();
+  if (!visibleCommands.length) {
+    const empty = document.createElement("div");
+    empty.className = "command-palette-empty";
+    empty.textContent = "No matching Project Blue command.";
+    commandPaletteResults.append(empty);
+  }
+  visibleCommands.forEach((command, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "command-palette-item";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(index === commandSelection));
+    button.innerHTML = `<span aria-hidden="true">›</span><span>${escapeHtml(command.label)}</span><small>${escapeHtml(command.category)}</small>`;
+    button.addEventListener("pointerenter", () => { commandSelection = index; renderCommandPalette(); });
+    button.addEventListener("click", () => executeCommand(command));
+    commandPaletteResults.append(button);
+  });
+  commandPalette.hidden = false;
+  commandSearch.setAttribute("aria-expanded", "true");
+  commandPaletteResults.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+function executeCommand(command) {
+  if (!command) return;
+  closeCommandPalette(true);
+  command.run();
+}
 
 function runCommand(value) {
   const query = String(value || "").trim().replace(/^>/, "").toLowerCase();
   if (!query) return;
-  const command = commandActions.find(item => item.terms.some(term => term === query || term.includes(query) || query.includes(term)));
+  const command = commandActions.find(item => item.label.toLowerCase() === query || item.terms.some(term => term === query)) || commandActions.find(item => commandMatches(item, query));
   if (command) {
-    command.run();
-    commandSearch.value = "";
+    executeCommand(command);
   } else {
     append("blue", `No control matched "${value}". Try Workspace, Research, Streaming, BlueMesh, Security, or Tools.`);
   }
 }
 
 commandSearch.onkeydown = event => {
-  if (event.key === "Enter") runCommand(commandSearch.value);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!visibleCommands.length) renderCommandPalette();
+    else {
+      const offset = event.key === "ArrowDown" ? 1 : -1;
+      commandSelection = (commandSelection + offset + visibleCommands.length) % visibleCommands.length;
+      renderCommandPalette();
+    }
+  }
+  if (event.key === "Enter") { event.preventDefault(); executeCommand(visibleCommands[commandSelection] || commandActions.find(item => commandMatches(item, commandSearch.value.replace(/^>/, "")))); }
   if (event.key === "Escape") {
-    commandSearch.value = "";
+    closeCommandPalette(true);
     commandSearch.blur();
   }
 };
+commandSearch.addEventListener("input", () => { commandSelection = 0; renderCommandPalette(); });
+commandSearch.addEventListener("focus", renderCommandPalette);
+document.addEventListener("pointerdown", event => {
+  if (!commandPalette?.hidden && !commandPalette.contains(event.target) && event.target !== commandSearch) closeCommandPalette(false);
+});
 window.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
@@ -533,6 +1774,76 @@ function append(who, text) {
   messages.append(group);
   messages.scrollTop = messages.scrollHeight;
   updateBlueContext();
+function setDashboardText(id, value) {
+  const element = document.querySelector(`#${id}`);
+  if (element) element.textContent = value || "Not available";
+}
+
+function collectWorkbenchAwareness() {
+  const activeActivity = layoutState.activeActivity || "workspace";
+  const editor = currentEditor?.() || "workspace-home";
+  const conversation = conversationSelect?.selectedOptions?.[0]?.textContent || "Blue Desktop Pet";
+  return {
+    project: "Project Blue",
+    activeActivity,
+    editor,
+    conversation,
+    blueMesh: document.querySelector("#footerBlueMesh")?.textContent || "BlueMesh: installed",
+    discord: footerDiscord?.textContent || "Discord: disconnected",
+    obs: document.querySelector("#footerObs")?.textContent || "OBS: disconnected",
+    security: document.querySelector("#footerSecurity")?.textContent || "Security: not scanned",
+    model: document.querySelector("#footerModel")?.textContent || "Model: local/foundation"
+  };
+}
+
+function updateAliveDashboard(extra = {}) {
+  const awareness = { ...collectWorkbenchAwareness(), ...extra };
+  setDashboardText("dashSession", awareness.conversation);
+  setDashboardText("dashTasks", awareness.activeActivity === "run" ? "Task view is open" : "No task selected");
+  setDashboardText("dashStreaming", awareness.obs.replace(/^OBS:\s*/i, "OBS "));
+  setDashboardText("dashBlueMesh", awareness.blueMesh.replace(/^BlueMesh:\s*/i, ""));
+  setDashboardText("dashHealth", awareness.security.replace(/^Security:\s*/i, ""));
+  setDashboardText("dashResearch", awareness.activeActivity === "research" ? "Research lab active" : "Ready for questions");
+  setDashboardText("dashBackground", document.body.classList.contains("bottom-open") ? "Bottom panel active" : "Idle");
+  setDashboardText("dashPet", awareness.pet || "Present, calm idle");
+  setDashboardText("dashFiles", awareness.editor === "file-preview" ? "File preview open" : "Open Explorer to inspect");
+  setDashboardText("dashProgress", awareness.progress || "Workbench ready");
+  const suggestion = awareness.suggestion || (awareness.activeActivity === "workspace"
+    ? "I can inspect recent changes, scan files, or prepare streaming."
+    : `I see ${awareness.activeActivity}. Want me to summarize this area?`);
+  setDashboardText("dashSuggestions", suggestion);
+  setDashboardText("aliveFocus", `${awareness.activeActivity} / ${awareness.editor}`);
+  setDashboardText("aliveMood", awareness.activeActivity === "streaming" ? "Showtime" : awareness.activeActivity === "diagnostics" ? "Curious" : "Attentive");
+  const notice = document.querySelector("#proactiveNotice");
+  if (notice) notice.textContent = suggestion;
+  setDashboardText("ctxSuggestions", suggestion);
+}
+
+async function refreshAliveGitSummary() {
+  setDashboardText("dashGit", "Reading Git...");
+  try {
+    const result = await window.bluePet.workspaceGit();
+    const files = result?.data?.files || [];
+    const branch = result?.data?.branch || "current branch";
+    const summary = files.length ? `${files.length} changed file(s) on ${branch}` : `No changed files on ${branch}`;
+    setDashboardText("dashGit", summary);
+    updateAliveDashboard({ suggestion: files.length ? `${files.length} files changed. Want a summary?` : "Git is clean. Good moment to keep building." });
+    return result;
+  } catch (error) {
+    setDashboardText("dashGit", `Git unavailable: ${error.message}`);
+    return null;
+  }
+}
+
+document.querySelector("#dashGitRefresh")?.addEventListener("click", refreshAliveGitSummary);
+document.querySelector("#dashFunctionCheck")?.addEventListener("click", async () => {
+  setDashboardText("dashProgress", "Checking functions...");
+  const result = await window.bluePet.controlAudit();
+  setDashboardText("dashProgress", result?.ok ? "Function audit passed" : "Function audit needs attention");
+  updateAliveDashboard({ suggestion: result?.ok ? "All controls are wired. We can keep building." : "I found UI wiring issues. Open Diagnostics?" });
+  showBottomPanel("output");
+});
+updateAliveDashboard();
 }
 
 function modelKindLabel(model) {
@@ -1866,6 +3177,123 @@ function setWorkbenchOutput(value) {
   return text;
 }
 
+let streamingWorkbenchStatus = null;
+let streamingWorkbenchLoading = null;
+
+function streamingElement(id) {
+  return document.querySelector(`#${id}`);
+}
+
+function streamingText(id, value) {
+  const element = streamingElement(id);
+  if (element) element.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function replaceSelectOptions(select, items, selectedValue) {
+  if (!select) return;
+  select.replaceChildren();
+  for (const item of items || []) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    option.selected = item.id === selectedValue;
+    select.append(option);
+  }
+}
+
+function currentStreamingConfig() {
+  const base = streamingWorkbenchStatus?.config || {};
+  return {
+    ...base,
+    obsUrl: streamingElement("streamingObsUrl")?.value.trim() || base.obsUrl || "ws://127.0.0.1:4455",
+    platform: streamingElement("streamingPlatformSelect")?.value || base.platform || "twitch",
+    streamMode: streamingElement("streamingModeSelect")?.value || base.streamMode || "sfw",
+    chatReadMode: streamingElement("streamingChatMode")?.value || base.chatReadMode || "read_only",
+    avatarBackend: streamingElement("streamingAvatarBackend")?.value || base.avatarBackend || "vrm",
+    voiceProfile: streamingElement("streamingVoiceProfile")?.value.trim() || base.voiceProfile || "blue_original",
+    independentMode: Boolean(streamingElement("streamingIndependent")?.checked),
+    verifiedAdultsOnly: Boolean(streamingElement("streamingVerifiedAdults")?.checked),
+    platformRulesReviewed: Boolean(streamingElement("streamingRulesReviewed")?.checked),
+    adultContentApproval: Boolean(streamingElement("streamingAdultApproval")?.checked)
+  };
+}
+
+function renderStreamingPlatformCatalog(status) {
+  const root = streamingElement("streamingPlatformCatalog");
+  if (!root) return;
+  root.replaceChildren();
+  const groups = [
+    ["SFW & community", ["sfw", "community"]],
+    ["Adult verified", ["adult"]],
+    ["Custom / adapter required", ["custom"]]
+  ];
+  for (const [title, types] of groups) {
+    const details = document.createElement("details");
+    details.open = title === "SFW & community";
+    const summary = document.createElement("summary");
+    const items = (status.platforms || []).filter(item => types.includes(item.type));
+    summary.textContent = `${title} (${items.length})`;
+    details.append(summary);
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Platform</th><th>Adapter</th><th>Chat</th><th>Age gate</th></tr></thead>";
+    const body = document.createElement("tbody");
+    for (const item of items) {
+      const row = document.createElement("tr");
+      for (const value of [item.label, item.adapter, item.chatSupport, item.requiresAgeVerification ? "Required" : "No"]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      row.onclick = () => {
+        const select = streamingElement("streamingPlatformSelect");
+        if (select) select.value = item.id;
+        streamingText("streamingPlatformOutput", `${item.label}\nType: ${item.type}\nAdapter: ${item.adapter}\nChat: ${item.chatSupport}\n${item.requiresAgeVerification ? "Verified-adult gate required." : "Standard platform review required."}`);
+      };
+      body.append(row);
+    }
+    table.append(body);
+    details.append(table);
+    root.append(details);
+  }
+}
+
+function applyStreamingStatus(status) {
+  streamingWorkbenchStatus = status;
+  const config = status.config || {};
+  replaceSelectOptions(streamingElement("streamingPlatformSelect"), status.platforms, config.platform);
+  replaceSelectOptions(streamingElement("streamingShowFormat"), status.showFormats, "neuro_chat");
+  replaceSelectOptions(streamingElement("streamingAutonomyLevel"), status.autonomyLevels, config.independentMode ? "independent_guarded" : "assistant");
+  const values = {
+    streamingModeSelect: config.streamMode,
+    streamingChatMode: config.chatReadMode,
+    streamingAvatarBackend: config.avatarBackend,
+    streamingObsUrl: config.obsUrl,
+    streamingVoiceProfile: config.voiceProfile
+  };
+  for (const [id, value] of Object.entries(values)) if (streamingElement(id) && value != null) streamingElement(id).value = value;
+  for (const [id, value] of Object.entries({ streamingIndependent: config.independentMode, streamingVerifiedAdults: config.verifiedAdultsOnly, streamingRulesReviewed: config.platformRulesReviewed, streamingAdultApproval: config.adultContentApproval })) {
+    if (streamingElement(id)) streamingElement(id).checked = Boolean(value);
+  }
+  streamingText("streamingSummaryPlatform", (status.platforms || []).find(item => item.id === config.platform)?.label || config.platform || "Not selected");
+  streamingText("streamingSummaryMode", config.streamMode || "Not selected");
+  streamingText("streamingSummaryAvatar", config.avatarBackend || "Not selected");
+  streamingText("streamingSummaryPreflight", status.preflight?.readyToPrepare ? "Ready to prepare" : `${status.preflight?.blockers?.length || 0} checks need review`);
+  streamingText("streamingStatusDetails", { config, preflight: status.preflight, chat: status.chat });
+  renderStreamingPlatformCatalog(status);
+  const footerObs = streamingElement("footerObs");
+  if (footerObs) footerObs.textContent = "OBS: not checked";
+  return status;
+}
+
+async function refreshStreamingWorkbench(force = false) {
+  if (streamingWorkbenchStatus && !force) return streamingWorkbenchStatus;
+  if (streamingWorkbenchLoading) return streamingWorkbenchLoading;
+  streamingWorkbenchLoading = window.bluePet.streamingStatus()
+    .then(applyStreamingStatus)
+    .finally(() => { streamingWorkbenchLoading = null; });
+  return streamingWorkbenchLoading;
+}
+
 const rebuiltButtonElements = {
   chatRunAudit: document.querySelector("#chatRunAudit"),
   chatToolPaste: document.querySelector("#chatToolPaste"),
@@ -1903,6 +3331,14 @@ const rebuiltButtonElements = {
   streamingVoiceTest: document.querySelector("#streamingVoiceTest"),
   streamingIndependencePlan: document.querySelector("#streamingIndependencePlan"),
   streamingGoLiveChecklist: document.querySelector("#streamingGoLiveChecklist"),
+  streamingShowRunner: document.querySelector("#streamingShowRunner"),
+  streamingFullPreflight: document.querySelector("#streamingFullPreflight"),
+  streamingAdultReadiness: document.querySelector("#streamingAdultReadiness"),
+  streamingChatGuide: document.querySelector("#streamingChatGuide"),
+  streamingModerationRules: document.querySelector("#streamingModerationRules"),
+  streamingMetadataPreview: document.querySelector("#streamingMetadataPreview"),
+  streamingMetadataClear: document.querySelector("#streamingMetadataClear"),
+  streamingAvatarSave: document.querySelector("#streamingAvatarSave"),
   blueMeshCheck: document.querySelector("#blueMeshCheck"),
   blueMeshToken: document.querySelector("#blueMeshToken"),
   blueMeshSmoke: document.querySelector("#blueMeshSmoke"),
@@ -1910,7 +3346,11 @@ const rebuiltButtonElements = {
   blueMeshCopyServer: document.querySelector("#blueMeshCopyServer"),
   blueMeshCopyPush: document.querySelector("#blueMeshCopyPush"),
   settingsOpenProject: document.querySelector("#settingsOpenProject"),
-  settingsRunAudit: document.querySelector("#settingsRunAudit")
+  settingsRunAudit: document.querySelector("#settingsRunAudit"),
+  workspaceSettingsSave: document.querySelector("#workspaceSettingsSave"),
+  workspaceSettingsReload: document.querySelector("#workspaceSettingsReload"),
+  workspaceRootAdd: document.querySelector("#workspaceRootAdd"),
+  workspaceSymbolsRefresh: document.querySelector("#workspaceSymbolsRefresh")
 };
 
 function wireRebuiltShellButtons() {
@@ -1928,7 +3368,7 @@ function wireRebuiltShellButtons() {
   };
   const click = id => document.querySelector(`#${id}`)?.click();
 
-  wire("chatRunAudit", async () => { selectTab("tools", "diagnostics"); showBottomPanel("output"); return window.bluePet.controlAudit(); });
+  wire("chatRunAudit", async () => { selectTab("diagnostics", "diagnostics"); showBottomPanel("output"); return window.bluePet.controlAudit(); });
   wire("chatToolPaste", async () => click("pasteSend"));
   wire("chatToolOcr", async () => click("useOcr"));
   wire("chatAttachFiles", async () => click("files"));
@@ -1936,36 +3376,116 @@ function wireRebuiltShellButtons() {
   wire("chatAttachFolder", async () => click("folder"));
   wire("chatPasteClipboard", async () => click("clipboard"));
   wire("chatScanImage", async () => click("scanImage"));
-  wire("chatToolIdea", async () => { selectTab("workspace", "idea-lab"); document.querySelector("#labTitle")?.focus(); });
-  wire("chatToolLearn", async () => { selectTab("workspace", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
-  wire("chatToolResearch", async () => { selectTab("workspace", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
-  wire("chatToolAgent", async () => { selectTab("workspace", "research-lab"); document.querySelector("#agentGoal")?.focus(); });
+  wire("chatToolIdea", async () => { selectTab("research", "idea-lab"); document.querySelector("#labTitle")?.focus(); });
+  wire("chatToolLearn", async () => { selectTab("research", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
+  wire("chatToolResearch", async () => { selectTab("research", "research-lab"); document.querySelector("#learningTopic")?.focus(); });
+  wire("chatToolAgent", async () => { selectTab("research", "research-lab"); document.querySelector("#agentGoal")?.focus(); });
 
   wire("devRunAudit", async () => window.bluePet.controlAudit());
   wire("devRunDoctor", async () => window.bluePet.doctor());
   wire("devSystemInfo", async () => window.bluePet.systemInfo());
   wire("devOpenProject", async () => window.bluePet.openProject());
-  wire("devFocusDiagnostics", async () => { selectTab("tools", "diagnostics"); showBottomPanel("output"); return "Diagnostics focused."; });
-  wire("devSecurityScan", async () => { selectTab("systems", "security"); click("securityScan"); });
+  wire("devFocusDiagnostics", async () => { selectTab("diagnostics", "diagnostics"); showBottomPanel("output"); return "Diagnostics focused."; });
+  wire("devSecurityScan", async () => { selectTab("diagnostics", "security"); click("securityScan"); });
   wire("devBlueMeshCheck", async () => window.bluePet.blueMeshStatus());
 
-  wire("streamingStatusRefresh", async () => window.bluePet.streamingStatus());
-  wire("streamingObsSave", async () => window.bluePet.saveStreamingConfig({ obs: {}, updatedFrom: "control-center" }));
-  wire("streamingObsCheck", async () => window.bluePet.checkObs({}));
-  wire("streamingObsSceneRefresh", async () => window.bluePet.listObsScenes({}));
-  wire("streamingObsCaptureGuide", async () => window.bluePet.streamingPlan({ kind: "obs_capture_guide" }));
-  wire("streamingObsSceneSwitch", async () => window.bluePet.switchObsScene({ sceneName: "" }));
-  wire("streamingSavePlatform", async () => window.bluePet.saveStreamingConfig({ platforms: [], updatedFrom: "control-center" }));
-  wire("streamingChatReadiness", async () => window.bluePet.streamingPlan({ kind: "chat_readiness" }));
-  wire("streamingRulesCheck", async () => window.bluePet.streamingPlan({ kind: "rules_check" }));
-  wire("streamingModerationPlan", async () => window.bluePet.streamingPlan({ kind: "moderation" }));
-  wire("streamingToggleVrm", async () => window.bluePet.streamingPlan({ kind: "toggle_vrm" }));
-  wire("streamingToggleLive2d", async () => window.bluePet.streamingPlan({ kind: "toggle_live2d" }));
-  wire("streamingToggleWarudo", async () => window.bluePet.streamingPlan({ kind: "toggle_warudo" }));
-  wire("streamingVoiceSafety", async () => window.bluePet.streamingPlan({ kind: "voice_safety" }));
+  wire("streamingStatusRefresh", async () => applyStreamingStatus(await window.bluePet.streamingStatus()));
+  wire("streamingObsSave", async () => {
+    const result = await window.bluePet.saveStreamingConfig({ obsUrl: currentStreamingConfig().obsUrl });
+    streamingWorkbenchStatus = null;
+    streamingText("streamingObsOutput", result.message);
+    return result;
+  });
+  wire("streamingObsCheck", async () => {
+    const result = await window.bluePet.checkObs({ obsUrl: currentStreamingConfig().obsUrl, password: streamingElement("streamingObsPassword")?.value || "" });
+    streamingText("streamingObsOutput", result);
+    const footerObs = streamingElement("footerObs");
+    if (footerObs) footerObs.textContent = `OBS: ${result.obsVersion || "connected"}`;
+    return result;
+  });
+  wire("streamingObsSceneRefresh", async () => {
+    const result = await window.bluePet.listObsScenes({ obsUrl: currentStreamingConfig().obsUrl, password: streamingElement("streamingObsPassword")?.value || "" });
+    replaceSelectOptions(streamingElement("streamingSceneSelect"), (result.scenes || []).map(name => ({ id: name, label: name })), result.currentProgramSceneName);
+    streamingText("streamingSceneOutput", result);
+    return result;
+  });
+  wire("streamingObsCaptureGuide", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "obs", config: currentStreamingConfig() });
+    streamingText("streamingObsOutput", result);
+    return result;
+  });
+  wire("streamingObsSceneSwitch", async () => {
+    const result = await window.bluePet.switchObsScene({
+      obsUrl: currentStreamingConfig().obsUrl,
+      password: streamingElement("streamingObsPassword")?.value || "",
+      sceneName: streamingElement("streamingSceneSelect")?.value || "",
+      approved: Boolean(streamingElement("streamingSceneApprove")?.checked)
+    });
+    streamingText("streamingSceneOutput", result);
+    if (streamingElement("streamingSceneApprove")) streamingElement("streamingSceneApprove").checked = false;
+    return result;
+  });
+  wire("streamingSavePlatform", async () => {
+    const result = await window.bluePet.saveStreamingConfig(currentStreamingConfig());
+    streamingWorkbenchStatus = null;
+    applyStreamingStatus(await window.bluePet.streamingStatus());
+    streamingText("streamingPlatformOutput", result.message);
+    return result;
+  });
+  wire("streamingChatReadiness", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "chat", config: currentStreamingConfig() });
+    streamingText("streamingChatOutput", result);
+    return result;
+  });
+  wire("streamingChatGuide", async () => {
+    const status = await refreshStreamingWorkbench(true);
+    streamingText("streamingChatOutput", status.chatGuide);
+    return status.chatGuide;
+  });
+  wire("streamingRulesCheck", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "preflight", config: currentStreamingConfig() });
+    streamingText("streamingPlatformOutput", result);
+    return result;
+  });
+  wire("streamingModerationRules", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "preflight", config: currentStreamingConfig() });
+    streamingText("streamingModerationOutput", result);
+    return result;
+  });
+  wire("streamingModerationPlan", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "moderation", config: currentStreamingConfig(), message: streamingElement("streamingModerationSample")?.value || "" });
+    streamingText("streamingModerationOutput", result);
+    return result;
+  });
+  wire("streamingAdultReadiness", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "adult", config: currentStreamingConfig() });
+    streamingText("streamingPlatformOutput", result);
+    return result;
+  });
+  wire("streamingShowRunner", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "showrunner", config: currentStreamingConfig(), showFormat: streamingElement("streamingShowFormat")?.value, autonomyLevel: streamingElement("streamingAutonomyLevel")?.value });
+    streamingText("streamingShowOutput", result);
+    return result;
+  });
+  wire("streamingFullPreflight", async () => {
+    const result = await window.bluePet.streamingPlan({ kind: "preflight", config: currentStreamingConfig() });
+    streamingText("streamingShowOutput", result);
+    return result;
+  });
+  wire("streamingToggleVrm", async () => { if (streamingElement("streamingAvatarBackend")) streamingElement("streamingAvatarBackend").value = "vrm"; const result = await window.bluePet.streamingPlan({ kind: "avatar", config: currentStreamingConfig() }); streamingText("streamingAvatarOutput", result); return result; });
+  wire("streamingToggleLive2d", async () => { if (streamingElement("streamingAvatarBackend")) streamingElement("streamingAvatarBackend").value = "live2d"; const result = await window.bluePet.streamingPlan({ kind: "avatar", config: currentStreamingConfig() }); streamingText("streamingAvatarOutput", result); return result; });
+  wire("streamingToggleWarudo", async () => { if (streamingElement("streamingAvatarBackend")) streamingElement("streamingAvatarBackend").value = "warudo"; const result = await window.bluePet.streamingPlan({ kind: "avatar", config: currentStreamingConfig() }); streamingText("streamingAvatarOutput", result); return result; });
+  wire("streamingAvatarSave", async () => { const result = await window.bluePet.saveStreamingConfig(currentStreamingConfig()); streamingWorkbenchStatus = null; streamingText("streamingAvatarOutput", result.message); return result; });
+  wire("streamingVoiceSafety", async () => { const result = await window.bluePet.streamingPlan({ kind: "voice", config: currentStreamingConfig() }); streamingText("streamingAvatarOutput", result); return result; });
   wire("streamingVoiceTest", async () => { click("voiceTest"); return "Streaming voice test started through Blue voice controls."; });
-  wire("streamingIndependencePlan", async () => window.bluePet.streamingPlan({ kind: "independent_stream" }));
-  wire("streamingGoLiveChecklist", async () => window.bluePet.streamingPlan({ kind: "go_live_checklist" }));
+  wire("streamingIndependencePlan", async () => { const result = await window.bluePet.streamingPlan({ kind: "independent", config: currentStreamingConfig() }); streamingText("streamingShowOutput", result); return result; });
+  wire("streamingGoLiveChecklist", async () => { const result = await window.bluePet.streamingPlan({ kind: "preflight", config: currentStreamingConfig() }); streamingText("streamingShowOutput", result); return result; });
+  wire("streamingMetadataPreview", async () => {
+    const preview = [`Title: ${streamingElement("streamingTitleDraft")?.value.trim() || "(untitled)"}`, `Category: ${streamingElement("streamingCategoryDraft")?.value.trim() || "(not selected)"}`, `Tags: ${streamingElement("streamingTagsDraft")?.value.trim() || "(none)"}`, "", "Producer notes:", streamingElement("streamingProducerNotes")?.value.trim() || "(none)", "", "Draft only — nothing was posted or changed on a platform."].join("\n");
+    streamingText("streamingMetadataOutput", preview);
+    return preview;
+  });
+  wire("streamingMetadataClear", async () => { for (const id of ["streamingTitleDraft", "streamingCategoryDraft", "streamingTagsDraft", "streamingProducerNotes"]) if (streamingElement(id)) streamingElement(id).value = ""; streamingText("streamingMetadataOutput", "Draft cleared locally."); return "Streaming metadata draft cleared."; });
 
   wire("blueMeshCheck", async () => window.bluePet.blueMeshStatus());
   wire("blueMeshToken", async () => window.bluePet.blueMeshToken());
@@ -1976,6 +3496,373 @@ function wireRebuiltShellButtons() {
 
   wire("settingsOpenProject", async () => window.bluePet.openProject());
   wire("settingsRunAudit", async () => window.bluePet.controlAudit());
+  wire("workspaceSettingsSave", saveWorkspaceSettings);
+  wire("workspaceSettingsReload", loadWorkspaceSettings);
+  wire("workspaceRootAdd", addWorkspaceRoot);
+  wire("workspaceSymbolsRefresh", rebuildSymbolIndex);
 }
 
 wireRebuiltShellButtons();
+
+// Phase 4: persistent PTY terminals and supervised task definitions.
+const terminalSessions = new Map();
+let activeTerminalId = null;
+let splitTerminalId = null;
+
+function cleanTerminalOutput(value) {
+  return String(value || "")
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .slice(-1024 * 1024);
+}
+
+function terminalForPane(split = false) {
+  return terminalSessions.get(split ? splitTerminalId : activeTerminalId);
+}
+
+function renderTerminalWorkbench() {
+  const tabs = document.querySelector("#terminalTabs");
+  if (tabs) {
+    tabs.replaceChildren();
+    for (const session of terminalSessions.values()) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = session.id === activeTerminalId ? "active" : "";
+      button.textContent = `${session.title}${session.state === "exited" ? ` (${session.exitCode})` : ""}`;
+      button.onclick = () => { activeTerminalId = session.id; renderTerminalWorkbench(); };
+      tabs.append(button);
+    }
+  }
+  const primary = terminalForPane(false);
+  const secondary = terminalForPane(true);
+  const primaryOutput = document.querySelector("#terminalOutput");
+  const secondaryOutput = document.querySelector("#terminalSplitOutput");
+  if (primaryOutput) { primaryOutput.textContent = cleanTerminalOutput(primary?.output || "Create a terminal to begin."); primaryOutput.scrollTop = primaryOutput.scrollHeight; }
+  if (secondaryOutput) { secondaryOutput.textContent = cleanTerminalOutput(secondary?.output || "Choose Split to create another terminal."); secondaryOutput.scrollTop = secondaryOutput.scrollHeight; }
+  const splitPane = document.querySelector("#terminalSplitPane");
+  const panes = document.querySelector("#terminalPanes");
+  if (splitPane) splitPane.hidden = !splitTerminalId;
+  panes?.classList.toggle("split", Boolean(splitTerminalId));
+  const status = document.querySelector("#terminalStatus");
+  if (status) status.textContent = primary
+    ? `${primary.profile} | ${primary.cwd} | PID ${primary.pid} | ${primary.state}${primary.exitCode === null ? "" : ` | exit ${primary.exitCode}`}`
+    : "No terminal session selected.";
+}
+
+async function refreshTerminals() {
+  const sessions = await window.bluePet.terminalList();
+  terminalSessions.clear();
+  for (const session of sessions) terminalSessions.set(session.id, session);
+  if (!terminalSessions.has(activeTerminalId)) activeTerminalId = sessions[0]?.id || null;
+  if (!terminalSessions.has(splitTerminalId)) splitTerminalId = null;
+  renderTerminalWorkbench();
+}
+
+async function createTerminal(asSplit = false) {
+  const profile = document.querySelector("#terminalProfile")?.value || "powershell";
+  const cwd = document.querySelector("#terminalCwd")?.value || ".";
+  const session = await window.bluePet.terminalCreate({ profile, cwd, cols: 100, rows: 30 });
+  terminalSessions.set(session.id, session);
+  if (asSplit) splitTerminalId = session.id; else activeTerminalId = session.id;
+  selectTab("run", "terminal-editor");
+  renderTerminalWorkbench();
+  return session;
+}
+
+async function initializeTerminalWorkbench() {
+  const profiles = await window.bluePet.terminalProfiles();
+  const select = document.querySelector("#terminalProfile");
+  if (select) {
+    select.replaceChildren();
+    for (const profile of profiles) {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = `${profile.label}${profile.available ? "" : " (not installed)"}`;
+      option.disabled = !profile.available;
+      select.append(option);
+    }
+  }
+  await refreshTerminals();
+  await refreshTasks();
+}
+
+async function sendTerminalInput(input, split = false) {
+  const session = terminalForPane(split);
+  if (!session || !input) return;
+  await window.bluePet.terminalWrite({ sessionId: session.id, data: `${input}\r` });
+}
+
+async function refreshTasks() {
+  const tasks = await window.bluePet.taskList();
+  const root = document.querySelector("#taskList");
+  if (!root) return;
+  root.replaceChildren();
+  for (const task of tasks) {
+    const row = document.createElement("div");
+    row.className = "task-row";
+    const description = document.createElement("div");
+    const title = document.createElement("strong"); title.textContent = task.label;
+    const metadata = document.createElement("small"); metadata.textContent = `${task.type} | ${task.profile} | ${task.cwd}`;
+    description.append(title, document.createElement("br"), metadata);
+    const run = document.createElement("button"); run.type = "button"; run.textContent = "Run";
+    run.onclick = async () => {
+      const result = await window.bluePet.taskRun(task.id);
+      terminalSessions.set(result.session.id, result.session); activeTerminalId = result.session.id;
+      selectTab("run", "terminal-editor"); renderTerminalWorkbench(); showBottomPanel(task.type === "test" ? "tests" : "terminal");
+    };
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "secondary"; edit.textContent = "Edit";
+    edit.onclick = () => {
+      document.querySelector("#taskId").value = task.id; document.querySelector("#taskLabel").value = task.label;
+      document.querySelector("#taskType").value = task.type; document.querySelector("#taskProfile").value = task.profile;
+      document.querySelector("#taskCwd").value = task.cwd; document.querySelector("#taskCommand").value = task.command;
+    };
+    row.append(description, run, edit); root.append(row);
+  }
+}
+
+document.querySelector("#terminalNew")?.addEventListener("click", () => createTerminal(false).catch(error => setWorkbenchOutput(error.message)));
+document.querySelector("#terminalSplit")?.addEventListener("click", () => createTerminal(true).catch(error => setWorkbenchOutput(error.message)));
+document.querySelector("#terminalKill")?.addEventListener("click", async () => {
+  if (!activeTerminalId) return;
+  await window.bluePet.terminalClose(activeTerminalId); terminalSessions.delete(activeTerminalId); activeTerminalId = terminalSessions.keys().next().value || null; renderTerminalWorkbench();
+});
+for (const [id, split] of [["terminalInput", false], ["terminalSplitInput", true]]) {
+  document.querySelector(`#${id}`)?.addEventListener("keydown", async event => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); const value = event.currentTarget.value; event.currentTarget.value = ""; await sendTerminalInput(value, split); }
+    if (event.key.toLowerCase() === "c" && event.ctrlKey) { event.preventDefault(); const session = terminalForPane(split); if (session) await window.bluePet.terminalWrite({ sessionId: session.id, data: "\u0003" }); }
+  });
+}
+document.querySelector("#taskRefresh")?.addEventListener("click", () => refreshTasks().catch(error => setWorkbenchOutput(error.message)));
+document.querySelector("#taskClear")?.addEventListener("click", () => document.querySelector("#taskForm")?.reset());
+document.querySelector("#taskForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const saveButton = document.querySelector("#taskSave");
+  if (saveButton) saveButton.disabled = true;
+  try {
+    const task = await window.bluePet.taskSave({ id: document.querySelector("#taskId")?.value, label: document.querySelector("#taskLabel")?.value, type: document.querySelector("#taskType")?.value, profile: document.querySelector("#taskProfile")?.value, cwd: document.querySelector("#taskCwd")?.value, command: document.querySelector("#taskCommand")?.value });
+    document.querySelector("#taskStatus").textContent = `Saved ${task.label}.`; await refreshTasks();
+  } catch (error) { document.querySelector("#taskStatus").textContent = error.message; }
+  finally { if (saveButton) saveButton.disabled = false; }
+});
+
+window.bluePet.onTerminalEvent(event => {
+  if (event.type === "created") terminalSessions.set(event.session.id, event.session);
+  const session = terminalSessions.get(event.sessionId);
+  if (session && event.type === "data") session.output = `${session.output || ""}${event.data}`.slice(-1024 * 1024);
+  if (session && event.type === "exit") { session.state = "exited"; session.exitCode = event.exitCode; }
+  if (event.type === "closed") terminalSessions.delete(event.sessionId);
+  renderTerminalWorkbench();
+  if ((event.type === "data" || event.type === "exit") && bottomPanel && !bottomPanel.hidden && ["terminal", "tests"].includes(layoutState.bottomTab)) {
+    setWorkbenchOutput(cleanTerminalOutput(session?.output || `Process exited with ${event.exitCode}.`));
+  }
+  if (event.key === "F6") {
+    event.preventDefault();
+    const activeEditor = document.querySelector('.editor-surface > section.active-editor:not([hidden])');
+    const parts = [commandSearch, activityBar?.querySelector('[aria-pressed="true"]'), contextSidebar?.querySelector("button, input, select"), activeEditor?.querySelector("button, input, textarea, select, [tabindex='0']"), bottomPanel?.querySelector("button")].filter(Boolean);
+    if (!parts.length) return;
+    const current = parts.findIndex(part => part === document.activeElement || part.contains(document.activeElement));
+    parts[(current + (event.shiftKey ? -1 : 1) + parts.length) % parts.length].focus();
+  }
+});
+
+function moveRovingFocus(container, selector, event, activate) {
+  if (!container || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+  const items = [...container.querySelectorAll(selector)];
+  if (!items.length) return;
+  event.preventDefault();
+  const vertical = event.key === "ArrowUp" || event.key === "ArrowDown";
+  const step = event.key === "Home" ? -Infinity : event.key === "End" ? Infinity : (event.key === "ArrowLeft" || event.key === "ArrowUp") ? -1 : 1;
+  const current = Math.max(0, items.indexOf(document.activeElement));
+  const next = step === -Infinity ? 0 : step === Infinity ? items.length - 1 : (current + step + items.length) % items.length;
+  items.forEach((item, index) => { item.tabIndex = index === next ? 0 : -1; });
+  items[next].focus();
+  if (activate && !vertical) items[next].click();
+}
+activityBar?.addEventListener("keydown", event => moveRovingFocus(activityBar, "button", event, true));
+editorTabs?.addEventListener("keydown", event => moveRovingFocus(editorTabs, '[role="tab"]', event, true));
+
+window.bluePet.onLspEvent(event => {
+  if (event.type === "ready") setLspState(`Language server: ${event.serverId} ready`, true);
+  if (event.type === "error") setLspState(`Language server: ${event.message}`);
+  if (event.type === "log" && bottomPanel && !bottomPanel.hidden) setWorkbenchOutput(`[${event.serverId}] ${event.data}`);
+  if (event.type === "diagnostics") {
+    const activePath = String(activeFileEditorSession?.path || "").replace(/\\/g, "/").toLowerCase();
+    const diagnosticPath = String(event.filePath || "").replace(/\\/g, "/").toLowerCase();
+    if (monacoModel && activePath && diagnosticPath.endsWith(activePath)) {
+      const severity = { 1: window.monaco.MarkerSeverity.Error, 2: window.monaco.MarkerSeverity.Warning, 3: window.monaco.MarkerSeverity.Info, 4: window.monaco.MarkerSeverity.Hint };
+      window.monaco.editor.setModelMarkers(monacoModel, `blue-${event.serverId}`, event.diagnostics.map(item => ({ startLineNumber: item.range.start.line + 1, startColumn: item.range.start.character + 1, endLineNumber: item.range.end.line + 1, endColumn: item.range.end.character + 1, message: item.message, severity: severity[item.severity] || window.monaco.MarkerSeverity.Info, code: item.code })));
+      setLspState(`Language server: ${event.serverId} | ${event.diagnostics.length} diagnostics`, true);
+    }
+  }
+});
+
+initializeTerminalWorkbench().catch(error => setWorkbenchOutput(`Terminal initialization failed: ${error.message}`));
+
+// Phase 7: Debug Adapter Protocol workbench for Python and Node.
+let activeDebugSessionId = null;
+let activeDebugFrameId = null;
+function debugArguments() { return String(document.querySelector("#debugArgs")?.value || "").match(/(?:[^\s"]+|"[^"]*")+/g)?.map(value => value.replace(/^"|"$/g, "")) || []; }
+function debugBreakpointList() { return String(document.querySelector("#debugBreakpoints")?.value || "").split(/\r?\n/).map(value => value.trim()).filter(Boolean).map(value => { const match = value.match(/^(\d+)(?:\s*:\s*(.+))?$/); return match ? { line: Number(match[1]), condition: match[2] || "" } : null; }).filter(Boolean); }
+function appendDebugConsole(value) { const output = document.querySelector("#debugConsole"); if (!output) return; output.textContent = `${output.textContent}${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`.slice(-60000); output.scrollTop = output.scrollHeight; }
+function setDebugControls(active, stopped = false) { for (const id of ["debugStop", "debugPause", "debugApplyBreakpoints"]) document.querySelector(`#${id}`).disabled = !active; for (const id of ["debugContinue", "debugStepOver", "debugStepInto", "debugStepOut", "debugWatch", "debugEvaluate"]) document.querySelector(`#${id}`).disabled = !stopped; }
+async function refreshDebugVariables() { if (!activeDebugSessionId || !activeDebugFrameId) return; const scopeResult = await window.bluePet.debugCommand({ sessionId: activeDebugSessionId, command: "scopes", args: { frameId: activeDebugFrameId } }); const root = document.querySelector("#debugVariables"); root.replaceChildren(); for (const scope of scopeResult.scopes || []) { const heading = document.createElement("strong"); heading.textContent = scope.name; root.append(heading); const result = await window.bluePet.debugCommand({ sessionId: activeDebugSessionId, command: "variables", args: { variablesReference: scope.variablesReference } }); for (const variable of result.variables || []) { const row = document.createElement("div"); row.className = "debug-variable-row"; row.textContent = `${variable.name}: ${variable.value}`; root.append(row); } } }
+async function refreshDebugStack() { if (!activeDebugSessionId) return; const stack = await window.bluePet.debugCommand({ sessionId: activeDebugSessionId, command: "stackTrace", args: { startFrame: 0, levels: 100 } }); const root = document.querySelector("#debugCallStack"); const frames = stack.stackFrames || []; activeDebugFrameId = frames[0]?.id || null; root.replaceChildren(); for (const frame of frames) { const button = document.createElement("button"); button.className = "debug-tree-row"; button.textContent = `${frame.name} — ${frame.source?.name || "unknown"}:${frame.line}`; button.onclick = async () => { activeDebugFrameId = frame.id; if (frame.source?.path) await openWorkspaceFile(frame.source.path, { pinned: true }); await refreshDebugVariables(); }; root.append(button); } if (!frames.length) root.textContent = "No stack frames."; await refreshDebugVariables(); }
+async function runDebugCommand(command) { if (!activeDebugSessionId) return; await window.bluePet.debugCommand({ sessionId: activeDebugSessionId, command }); appendDebugConsole(`${command} requested.`); }
+document.querySelector("#debugRequest")?.addEventListener("change", event => { const attach = event.target.value === "attach"; document.querySelector("#debugAttachUrl").disabled = !attach; document.querySelector("#debugProgram").disabled = attach; });
+document.querySelector("#debugStart")?.addEventListener("click", async () => { try { const program = document.querySelector("#debugProgram").value || activeFileEditorSession?.path || ""; const result = await window.bluePet.debugStart({ runtime: document.querySelector("#debugRuntime").value, request: document.querySelector("#debugRequest").value, program, cwd: document.querySelector("#debugCwd").value || ".", args: debugArguments(), webSocketUrl: document.querySelector("#debugAttachUrl").value, stopOnEntry: true, breakpoints: program ? { [program]: debugBreakpointList() } : {} }); activeDebugSessionId = result.id; document.querySelector("#debugStatus").textContent = `${result.runtime} session ${result.id}: ${result.state}`; setDebugControls(true, result.state === "stopped"); appendDebugConsole(`Started ${result.runtime} debug session.`); } catch (error) { appendDebugConsole(`Start failed: ${error.message}`); } });
+document.querySelector("#debugStop")?.addEventListener("click", async () => { if (!activeDebugSessionId) return; await window.bluePet.debugStop(activeDebugSessionId); appendDebugConsole("Debug session stopped."); activeDebugSessionId = null; activeDebugFrameId = null; setDebugControls(false); });
+document.querySelector("#debugContinue")?.addEventListener("click", () => runDebugCommand("continue").catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugPause")?.addEventListener("click", () => runDebugCommand("pause").catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugStepOver")?.addEventListener("click", () => runDebugCommand("next").catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugStepInto")?.addEventListener("click", () => runDebugCommand("stepIn").catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugStepOut")?.addEventListener("click", () => runDebugCommand("stepOut").catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugApplyBreakpoints")?.addEventListener("click", async () => { if (!activeDebugSessionId) return; const source = document.querySelector("#debugProgram").value || activeFileEditorSession?.path; appendDebugConsole({ breakpoints: await window.bluePet.debugBreakpoints({ sessionId: activeDebugSessionId, source, breakpoints: debugBreakpointList() }) }); });
+async function evaluateDebug(expression) { if (!activeDebugSessionId || !activeDebugFrameId || !expression.trim()) return; const result = await window.bluePet.debugCommand({ sessionId: activeDebugSessionId, command: "evaluate", args: { expression, frameId: activeDebugFrameId, context: "repl" } }); appendDebugConsole(`${expression} = ${result.result}`); }
+document.querySelector("#debugWatch")?.addEventListener("click", () => evaluateDebug(document.querySelector("#debugWatchExpression").value).catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugEvaluate")?.addEventListener("click", () => evaluateDebug(document.querySelector("#debugConsoleInput").value).catch(error => appendDebugConsole(error.message)));
+document.querySelector("#debugConsoleInput")?.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); document.querySelector("#debugEvaluate").click(); } });
+document.querySelector("#debugProfileSave")?.addEventListener("click", async () => { try { const value = await window.bluePet.debugProfileSave({ name: document.querySelector("#debugProfileName").value, runtime: document.querySelector("#debugRuntime").value, request: document.querySelector("#debugRequest").value, program: document.querySelector("#debugProgram").value || activeFileEditorSession?.path, cwd: document.querySelector("#debugCwd").value || ".", args: debugArguments(), webSocketUrl: document.querySelector("#debugAttachUrl").value }); appendDebugConsole(`Saved launch profile ${value.name}.`); } catch (error) { appendDebugConsole(error.message); } });
+window.bluePet.onDebugEvent?.(event => { if (event.sessionId !== activeDebugSessionId) return; if (event.event === "output") appendDebugConsole(event.body?.output || ""); if (event.event === "stopped") { document.querySelector("#debugStatus").textContent = `Paused: ${event.body?.reason || "breakpoint"}`; setDebugControls(true, true); refreshDebugStack().catch(error => appendDebugConsole(error.message)); } if (event.event === "continued") { document.querySelector("#debugStatus").textContent = "Running"; setDebugControls(true, false); } if (["terminated", "exited", "adapterExit"].includes(event.event)) { document.querySelector("#debugStatus").textContent = "Debug session ended"; setDebugControls(false); } });
+
+// Phase 8: Test Explorer. Tests are workbench objects with source navigation,
+// history, output, and debugger handoff rather than terminal-only commands.
+let discoveredTestTree = { files: [], count: 0 };
+let selectedTestItem = null;
+function testStateClass(status) { return ["passed", "failed"].includes(status) ? status : ""; }
+function updateTestButtons() {
+  document.querySelector("#testRunFile").disabled = !selectedTestItem?.file;
+  document.querySelector("#testRunSelected").disabled = selectedTestItem?.type !== "test";
+  document.querySelector("#testDebugSelected").disabled = selectedTestItem?.type !== "test";
+}
+function selectTestItem(item, button) {
+  selectedTestItem = item;
+  document.querySelectorAll(".test-tree-row.selected").forEach(row => row.classList.remove("selected"));
+  button?.classList.add("selected");
+  updateTestButtons();
+}
+function renderTestExplorer(tree) {
+  discoveredTestTree = tree;
+  const root = document.querySelector("#testExplorer");
+  root.replaceChildren();
+  for (const file of tree.files || []) {
+    const fileButton = document.createElement("button");
+    fileButton.className = "test-tree-row file";
+    fileButton.innerHTML = `<span class="test-state"></span><span>${escapeHtml(file.label)}</span><small>${file.children.length}</small>`;
+    fileButton.onclick = () => selectTestItem(file, fileButton);
+    root.append(fileButton);
+    for (const item of file.children) {
+      const button = document.createElement("button");
+      button.className = "test-tree-row test";
+      button.innerHTML = `<span class="test-state"></span><span>${escapeHtml(item.label)}</span><small>:${item.line}</small>`;
+      button.onclick = () => selectTestItem(item, button);
+      button.ondblclick = () => openWorkspaceFile(item.file, { pinned: true, line: item.line });
+      root.append(button);
+    }
+  }
+  if (!tree.count) root.textContent = "No Node or Python tests discovered.";
+  document.querySelector("#testSummary").textContent = `${tree.count || 0} tests in ${(tree.files || []).length} files`;
+  selectedTestItem = null;
+  updateTestButtons();
+}
+function renderTestRun(run) {
+  const root = document.querySelector("#testResults");
+  root.replaceChildren();
+  for (const result of run.results || []) {
+    const button = document.createElement("button");
+    button.className = "test-result-row";
+    button.innerHTML = `<span class="test-state ${testStateClass(result.status)}"></span><span>${escapeHtml(result.label)}</span><small>${result.status} · ${result.durationMs} ms</small>`;
+    button.onclick = () => openWorkspaceFile(result.file, { pinned: true, line: result.line });
+    root.append(button);
+  }
+  document.querySelector("#testOutput").textContent = run.output || `${run.state}: no output`;
+  document.querySelector("#testSummary").textContent = `${run.state.toUpperCase()} · ${(run.results || []).length} tests`;
+}
+async function refreshTestHistory() {
+  const history = await window.bluePet.testHistory();
+  const root = document.querySelector("#testHistory");
+  root.replaceChildren();
+  for (const run of history) {
+    const button = document.createElement("button");
+    button.className = "test-history-row";
+    button.innerHTML = `<span class="test-state ${testStateClass(run.state)}"></span><span>${escapeHtml(run.mode)} · ${new Date(run.startedAt).toLocaleString()}</span>`;
+    button.onclick = () => renderTestRun(run);
+    root.append(button);
+  }
+  if (!history.length) root.textContent = "No test runs yet.";
+}
+async function discoverWorkspaceTests() {
+  document.querySelector("#testSummary").textContent = "Discovering tests…";
+  renderTestExplorer(await window.bluePet.testDiscover());
+  await refreshTestHistory();
+}
+async function runWorkspaceTests(value) {
+  document.querySelector("#testOutput").textContent = "Running tests…";
+  const run = await window.bluePet.testRun(value);
+  renderTestRun(run);
+  await refreshTestHistory();
+}
+document.querySelector("#testDiscover")?.addEventListener("click", () => discoverWorkspaceTests().catch(error => { document.querySelector("#testOutput").textContent = error.message; }));
+document.querySelector("#testRunAll")?.addEventListener("click", () => runWorkspaceTests({ mode: "all" }).catch(error => { document.querySelector("#testOutput").textContent = error.message; }));
+document.querySelector("#testRunFile")?.addEventListener("click", () => runWorkspaceTests({ mode: "file", file: selectedTestItem.file }).catch(error => { document.querySelector("#testOutput").textContent = error.message; }));
+document.querySelector("#testRunSelected")?.addEventListener("click", () => runWorkspaceTests({ mode: "test", testId: selectedTestItem.id }).catch(error => { document.querySelector("#testOutput").textContent = error.message; }));
+document.querySelector("#testDebugSelected")?.addEventListener("click", async () => { try { const result = await window.bluePet.testDebug(selectedTestItem.id); activeDebugSessionId = result.id; selectTab("run", "debugger"); document.querySelector("#debugStatus").textContent = `Debugging ${selectedTestItem.label}`; } catch (error) { document.querySelector("#testOutput").textContent = error.message; } });
+window.bluePet.onTestEvent?.(event => { if (event.event === "output") { const output = document.querySelector("#testOutput"); output.textContent = `${output.textContent}${event.output}`.slice(-250000); output.scrollTop = output.scrollHeight; } });
+
+// Phase 9: approval-gated extension registry and isolated extension host.
+let extensionSnapshot = { extensions: [], contributions: {} };
+let selectedExtensionId = null;
+function extensionOutput(value) { const output = document.querySelector("#extensionOutput"); if (output) output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2); }
+function registerRuntimeExtensionContributions(contributions) {
+  const extensionEditors = shell.editors.extensions;
+  const extensionSidebar = shell.sidebarItems.extensions;
+  for (const view of contributions.views || []) {
+    const label = view.title || view.id;
+    if (!extensionSidebar.includes(label)) extensionSidebar.push(label);
+  }
+  for (const editor of contributions.editors || []) {
+    if (!extensionEditors.some(item => item.id === editor.id)) extensionEditors.push({ id: editor.id, title: editor.title || editor.id, closable: true, extensionId: editor.extensionId });
+    if (!document.querySelector(`[data-panel="extensions"][data-editor="${CSS.escape(editor.id)}"]`)) {
+      const section = document.createElement("section");
+      section.dataset.panel = "extensions"; section.dataset.editor = editor.id; section.hidden = true;
+      section.className = "extension-custom-editor";
+      section.innerHTML = `<p class="eyebrow">Extension editor</p><h2>${escapeHtml(editor.title || editor.id)}</h2><p class="hint">Contributed by ${escapeHtml(editor.extensionId)} for ${escapeHtml(editor.selector || "custom content")}.</p><pre>Extension editors run through Blue's isolated extension host and shared workbench shell.</pre>`;
+      document.querySelector(".editor-surface")?.append(section);
+    }
+  }
+  if (layoutState.activity === "extensions") { renderSidebar(); renderEditorTabs(); }
+}
+function renderExtensionWorkbench(snapshot) {
+  extensionSnapshot = snapshot;
+  registerRuntimeExtensionContributions(snapshot.contributions || {});
+  const list = document.querySelector("#extensionList");
+  list.replaceChildren();
+  for (const item of snapshot.extensions || []) {
+    const button = document.createElement("button");
+    button.className = `extension-row${item.id === selectedExtensionId ? " selected" : ""}`;
+    button.innerHTML = `<span><strong>${escapeHtml(item.name || item.id)}</strong><small>${escapeHtml(item.id)} · ${escapeHtml(item.version || "invalid")}</small></span><span class="extension-state">${item.invalid ? "Invalid" : item.active ? "Active" : item.enabled ? "Enabled" : "Disabled"}</span>`;
+    button.onclick = () => { selectedExtensionId = item.id; renderExtensionWorkbench(snapshot); };
+    list.append(button);
+  }
+  if (!snapshot.extensions?.length) list.textContent = "No extensions installed.";
+  const selected = snapshot.extensions?.find(item => item.id === selectedExtensionId);
+  document.querySelector("#extensionDetails").innerHTML = selected ? `<h3>${escapeHtml(selected.name)}</h3><p>${escapeHtml(selected.id)} · ${escapeHtml(selected.version)}</p><p class="hint">${escapeHtml(selected.compatibilityMessage || selected.error || "Installed")}</p><p>Permissions: ${escapeHtml((selected.permissions || []).join(", ") || "none")}</p>` : `<h3>Select an extension</h3><p class="hint">Manifests contribute commands, sidebar views, custom editors, languages, and settings.</p>`;
+  for (const id of ["extensionEnable", "extensionActivate", "extensionDeactivate", "extensionUninstall"]) document.querySelector(`#${id}`).disabled = !selected;
+  const select = document.querySelector("#extensionCommandSelect"); select.replaceChildren(new Option("Choose a command", ""));
+  for (const command of snapshot.contributions?.commands || []) select.append(new Option(`${command.title || command.command} — ${command.extensionId}`, command.command));
+  document.querySelector("#extensionRunCommand").disabled = !select.value;
+  const contributionRoot = document.querySelector("#extensionContributions"); contributionRoot.replaceChildren();
+  for (const [kind, values] of Object.entries(snapshot.contributions || {})) for (const value of values) { const row = document.createElement("button"); row.className = "extension-contribution"; row.textContent = `${kind.slice(0, -1)} · ${value.title || value.id || value.command || value.key}`; row.title = `Contributed by ${value.extensionId}`; row.onclick = () => kind === "editors" ? selectTab("extensions", value.id) : extensionOutput(value); contributionRoot.append(row); }
+  if (!contributionRoot.children.length) contributionRoot.textContent = "No enabled contributions.";
+}
+async function refreshExtensions() { const snapshot = await window.bluePet.extensionList(); if (selectedExtensionId && !snapshot.extensions.some(item => item.id === selectedExtensionId)) selectedExtensionId = null; renderExtensionWorkbench(snapshot); return snapshot; }
+async function installExtension(source) { const result = await window.bluePet.extensionInstall({ source, approved: document.querySelector("#extensionApproval").checked }); selectedExtensionId = result.id; extensionOutput(`Installed ${result.name} ${result.version}.`); await refreshExtensions(); }
+document.querySelector("#extensionRefresh")?.addEventListener("click", () => refreshExtensions().catch(error => extensionOutput(error.message)));
+document.querySelector("#extensionInstallSample")?.addEventListener("click", () => installExtension("$bundled-sample").catch(error => extensionOutput(error.message)));
+document.querySelector("#extensionInstall")?.addEventListener("click", () => installExtension(document.querySelector("#extensionSource").value).catch(error => extensionOutput(error.message)));
+document.querySelector("#extensionEnable")?.addEventListener("click", async () => { const selected = extensionSnapshot.extensions.find(item => item.id === selectedExtensionId); try { await window.bluePet.extensionEnable({ id: selected.id, enabled: !selected.enabled }); await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
+document.querySelector("#extensionActivate")?.addEventListener("click", async () => { try { extensionOutput(await window.bluePet.extensionActivate({ id: selectedExtensionId, event: "onManual" })); await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
+document.querySelector("#extensionDeactivate")?.addEventListener("click", async () => { try { await window.bluePet.extensionDeactivate(selectedExtensionId); await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
+document.querySelector("#extensionUninstall")?.addEventListener("click", async () => { try { await window.bluePet.extensionUninstall({ id: selectedExtensionId, approved: document.querySelector("#extensionApproval").checked }); selectedExtensionId = null; await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
+document.querySelector("#extensionCommandSelect")?.addEventListener("change", event => { document.querySelector("#extensionRunCommand").disabled = !event.target.value; });
+document.querySelector("#extensionRunCommand")?.addEventListener("click", async () => { try { const raw = document.querySelector("#extensionCommandArgs").value.trim(); extensionOutput(await window.bluePet.extensionCommand({ command: document.querySelector("#extensionCommandSelect").value, args: raw ? JSON.parse(raw) : {} })); await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
+window.bluePet.onExtensionEvent?.(event => extensionOutput(event));

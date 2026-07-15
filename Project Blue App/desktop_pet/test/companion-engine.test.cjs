@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -63,4 +63,31 @@ test("engine persists recoverable state and restores to safe idle", () => {
   assert.equal(inspect.locomotion, "idle");
   assert.equal(restored.habits.data.preferredCorner, "top_left");
   assert.ok(restored.movement.position.x < 1280);
+});
+
+test("procedural life controller adds breathing, blinking, attention, and suggestions", () => {
+  const engine = new DesktopCompanionEngine();
+  const first = engine.tick(0.5, { activeWindow: "OBS Studio", gitChangedFiles: 6, cursorNearby: false });
+  assert.equal(first.life.attention, "obs");
+  assert.equal(first.animation.procedural.head, "screen_right");
+  assert.ok(first.animation.procedural.breathing >= 0);
+  assert.ok(first.animation.procedural.weightShift >= 0);
+  assert.ok(first.suggestions.some(text => text.includes("changed file")));
+
+  let blinkSeen = false;
+  for (let i = 0; i < 80; i += 1) {
+    const frame = engine.tick(0.1, { cursorNearby: true });
+    if (frame.life.blink) blinkSeen = true;
+  }
+  assert.equal(engine.inspect().life.attention, "cursor");
+  assert.equal(blinkSeen, true);
+});
+
+test("workspace events produce non-intrusive companion suggestions", () => {
+  const engine = new DesktopCompanionEngine();
+  const failed = engine.tick(0.016, { buildFailed: true, diagnostics: { errors: 2 } });
+  assert.equal(failed.life.attention, "diagnostics");
+  assert.ok(failed.suggestions.some(text => text.includes("failure")));
+  const idle = engine.tick(0.016, { idleSeconds: 1000 });
+  assert.ok(idle.suggestions.some(text => text.includes("focused")));
 });

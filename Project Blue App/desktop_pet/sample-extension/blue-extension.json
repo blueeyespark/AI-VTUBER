@@ -1,0 +1,22 @@
+{
+  "id": "project-blue.hello-workbench",
+  "name": "Hello Workbench",
+  "version": "1.0.0",
+  "engines": { "blue": "2" },
+  "main": "extension.cjs",
+  "activationEvents": ["onCommand:blue.hello", "onView:hello.sidebar"],
+  "permissions": [],
+  "commands": [],
+  "views": [],
+  "editors": [],
+  "languages": [],
+  "settings": [],
+  "dependencies": {},
+  "contributes": {
+    "commands": [{ "command": "blue.hello", "title": "Hello from Blue Extension" }],
+    "views": [{ "id": "hello.sidebar", "title": "Hello Extension", "location": "extensions" }],
+    "editors": [{ "id": "hello.editor", "title": "Hello Editor", "selector": "*.hello" }],
+    "languages": [{ "id": "hello", "extensions": [".hello"] }],
+    "settings": [{ "key": "hello.greeting", "type": "string", "default": "Hello from Project Blue" }]
+  }
+}

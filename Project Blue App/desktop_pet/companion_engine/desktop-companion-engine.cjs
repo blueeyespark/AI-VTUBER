@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const { AnimationStateMachine } = require("./animation-state-machine.cjs");
 const { BehaviorScheduler } = require("./behavior-planner.cjs");
@@ -8,6 +8,7 @@ const { MovementController, MultiMonitorController, NavigationSystem } = require
 const { SafetyController } = require("./safety-controller.cjs");
 const { ActionQueue } = require("./behavior-planner.cjs");
 const { normalizeProfile } = require("./model-profile.cjs");
+const { ProceduralLifeController } = require("./procedural-life-controller.cjs");
 const { inspectCompanion } = require("./debug-inspector.cjs");
 
 class DesktopCompanionEngine {
@@ -20,6 +21,7 @@ class DesktopCompanionEngine {
     this.safety = new SafetyController(options.safety);
     this.scheduler = new BehaviorScheduler();
     this.animation = new AnimationStateMachine();
+    this.life = new ProceduralLifeController(options.life);
     this.queue = new ActionQueue();
     this.currentMonitor = this.monitors.monitors[0];
     this.attentionTarget = "idle_scan";
@@ -48,8 +50,10 @@ class DesktopCompanionEngine {
     if (decision.action === "move_aside") this.setHome();
     if (decision.action === "sleep") this.animation.transition({ posture: "sleep", activity: "think", face: "sleepy" }, "planner");
     const motion = this.movement.tick(deltaSeconds);
-    this.animation.setFromMotion({ speed: motion.speed, dragged: context.dragged, speaking: context.speaking, listening: context.listening });
-    return { decision, motion, animation: this.animation.snapshot(), emotion: this.emotion.snapshot() };
+    const life = this.life.tick(deltaSeconds, { ...context, emotion: this.emotion.snapshot() }, decision);
+    this.attentionTarget = life.attention;
+    this.animation.setFromMotion({ speed: motion.speed, dragged: context.dragged, speaking: context.speaking, listening: context.listening, life });
+    return { decision, motion, animation: this.animation.snapshot(), emotion: this.emotion.snapshot(), life, suggestions: life.suggestions };
   }
 
   restore(state = {}) {
@@ -60,7 +64,7 @@ class DesktopCompanionEngine {
     return this.inspect();
   }
 
-  persistableState() { return { profile: this.profile, habits: this.habits.snapshot(), position: this.movement.position, destination: this.movement.destination }; }
+  persistableState() { return { profile: this.profile, habits: this.habits.snapshot(), life: this.life.snapshot(), position: this.movement.position, destination: this.movement.destination }; }
   inspect() { return inspectCompanion(this); }
 }
 

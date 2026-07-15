@@ -30,9 +30,20 @@ const {
   validateVoiceTranscript
 } = require("./runtime-guards.cjs");
 const { runBoundedProcess } = require("./process-runner.cjs");
+const { BlueTerminalService } = require("./terminal-service.cjs");
+const { BlueGitService } = require("./git-service.cjs");
+const { BlueLanguageService } = require("./language-service.cjs");
+const { BlueDebugService } = require("./debug-service.cjs");
+const { BlueTestService } = require("./test-service.cjs");
+const { BlueExtensionService } = require("./extension-service.cjs");
 const { DiscordAddon, normalizeDiscordConfig } = require("./discord-addon.cjs");
 const { advanceLocomotion } = require("./locomotion-core.cjs");
 const { auditControlCenter } = require("./control-audit.cjs");
+const { BlueWorkspaceAgentBridge, formatWorkspaceAgentResult } = require("./workspace-agent.cjs");
+const { BlueFeatureService } = require("./blue-feature-service.cjs");
+const { BlueEditorService } = require("./editor-service.cjs");
+const { BlueWorkbenchContextService } = require("./workbench-context-service.cjs");
+const { ProactiveBlueService } = require("./proactive-blue-service.cjs");
 const {
   DEFAULT_STREAMING_CONFIG,
   normalizeStreamingConfig,
@@ -72,6 +83,46 @@ let controlRecoveryTimer = null;
 let controlRecoveryAttempts = [];
 const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
+const workspaceAgent = new BlueWorkspaceAgentBridge(repoRoot);
+const blueFeatureService = new BlueFeatureService();
+const editorService = new BlueEditorService(repoRoot, {
+  recoveryRoot: path.join(appRoot, ".blue", "editor-recovery")
+});
+const terminalService = new BlueTerminalService(repoRoot, {
+  tasksPath: path.join(appRoot, ".blue", "tasks.json")
+});
+const gitService = new BlueGitService(repoRoot);
+const languageService = new BlueLanguageService(repoRoot, { moduleRoot: __dirname });
+const debugService = new BlueDebugService(repoRoot, { moduleRoot: __dirname });
+const testService = new BlueTestService(repoRoot);
+const extensionService = new BlueExtensionService(repoRoot, { moduleRoot: __dirname, blueVersion: desktopVersion });
+const workbenchContextService = new BlueWorkbenchContextService(repoRoot, {
+  stateRoot: path.join(appRoot, ".blue", "workbench-context")
+});
+const proactiveBlueService = new ProactiveBlueService(workbenchContextService);
+workbenchContextService.attachServices({ editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, extensions: extensionService });
+workspaceAgent.attachServices({ editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, context: workbenchContextService, proactive: proactiveBlueService });
+const observeWorkbench = (type, details = {}, uiContext = null) => proactiveBlueService.observe(type, details, uiContext).catch(() => null);
+languageService.on("event", event => {
+  if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) controlWindow.webContents.send("blue:lsp-event", event);
+  observeWorkbench(event?.type === "diagnostics" ? "diagnostics.changed" : "language.event", event);
+});
+debugService.on("event", event => {
+  if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) controlWindow.webContents.send("blue:debug-event", event);
+});
+testService.on("event", event => {
+  if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) controlWindow.webContents.send("blue:test-event", event);
+  observeWorkbench(event?.event === "finished" ? "tests.completed" : "tests.event", event);
+});
+extensionService.on("event", event => {
+  if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) controlWindow.webContents.send("blue:extension-event", event);
+});
+terminalService.onEvent(event => {
+  if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) {
+    controlWindow.webContents.send("blue:terminal-event", event);
+  }
+  observeWorkbench(event?.type === "exit" && Number(event?.exitCode) !== 0 ? "task.failed" : "terminal.event", event);
+});
 const blueDataDirectory = path.join(appRoot, ".blue");
 const presenceSettingsPath = path.join(blueDataDirectory, "presence.json");
 const observationLedgerPath = path.join(blueDataDirectory, "observations.jsonl");
@@ -99,8 +150,17 @@ const sessionDataDirectory = path.join(desktopStateDirectory, "session");
 fs.mkdirSync(sessionDataDirectory, { recursive: true });
 fs.mkdirSync(artifactDirectory, { recursive: true });
 fs.mkdirSync(conversationReferenceDirectory, { recursive: true });
-app.setPath("userData", desktopStateDirectory);
-app.setPath("sessionData", sessionDataDirectory);
+// Screenshot smoke runs use an isolated Electron profile so they can verify a
+// candidate UI without taking over or closing the creator's running Blue.
+const electronProfileDirectory = process.env.BLUE_CAPTURE_DIR
+  ? path.resolve(process.env.BLUE_CAPTURE_DIR, "electron-profile")
+  : desktopStateDirectory;
+const electronSessionDirectory = process.env.BLUE_CAPTURE_DIR
+  ? path.join(electronProfileDirectory, "session")
+  : sessionDataDirectory;
+fs.mkdirSync(electronSessionDirectory, { recursive: true });
+app.setPath("userData", electronProfileDirectory);
+app.setPath("sessionData", electronSessionDirectory);
 app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
@@ -4779,6 +4839,23 @@ const discordAddon = new DiscordAddon({
   }
 });
 discordAddon.configure(discordConfig);
+blueFeatureService.attach({
+  memory: {
+    status: async () => ({ conversations: parseConversations(await blue(["conversations"])).length, currentConversation }),
+    summarize: value => `${value.conversations} conversation(s); active: ${value.currentConversation}.`
+  },
+  bluemesh: { status: async () => blueMeshStatusSummary(), summarize: value => value.installed ? "Installed; trusted sync is approval-gated." : "Not installed." },
+  discord: { status: async () => discordAddon.status(), summarize: value => value.connected ? "Connected." : "Disconnected; token remains session-only." },
+  streaming: { status: async () => ({ config: sanitizeStreamingConfig(streamingConfig), policy: streamingPolicySummary(streamingConfig), preflight: buildStreamingPreflight(streamingConfig) }), summarize: value => `${value.config.platform || "No platform"}; ${value.config.streamMode || "mode not selected"}.` },
+  voice: { status: async () => ({ ...voiceSettings, listening: microphoneListening }), summarize: value => value.enabled === false ? "Voice disabled." : "Voice configured; microphone use is explicit." },
+  vision: { status: async () => presenceSnapshot(), summarize: value => `Presence ${value.state}; automatic capture remains off.` },
+  companion: { status: async () => ({ model: currentVtuberModel(), presence: presenceSnapshot(), visible: Boolean(petWindow && !petWindow.isDestroyed()) }), summarize: value => `${value.visible ? "Visible" : "Hidden"}; model ${value.model?.name || value.model?.id || "default"}.` },
+  research: { status: async () => ({ catalog: await blue(["research-catalog"]), records: readLearningRecords().length }), summarize: value => `${value.records} saved learning/research record(s).` },
+  ideas: { status: async () => ({ capability: "Blue Laboratory", approvalRequiredForChanges: true }), actions: { capture: async value => appendLearningRecord(String(value || "Untitled idea"), "idea", "Captured through the unified Blue workbench.") } },
+  generated: { status: async () => artifactPreviewPayload(), summarize: value => value?.exists ? `Latest result: ${value.name || value.path}.` : "No generated result is currently recorded." },
+  workflows: { status: async () => ({ agent: normalizeAgentState(agentState), approvals: "required for sensitive execution" }), actions: { plan: async value => createAgentPlan(String(value || "Creator workflow"), "blue_workbench") } }
+});
+workspaceAgent.attachServices({ blue: blueFeatureService });
 
 async function shareNote(note) {
   return cleanChat(await blue(["conversation-chat", "Blue Desktop Pet", note]));
@@ -5339,10 +5416,21 @@ function trustedOn(channel, handler) {
   });
 }
 
+
+async function maybeHandleWorkspaceAgentChat(message) {
+  const result = await workspaceAgent.handleMessage(message);
+  if (!result) return null;
+  return formatWorkspaceAgentResult(result);
+}
 function registerHandlers() {
   trustedHandle("blue:chat", async (_event, message) => {
     const validatedMessage = validateChatMessage(message);
     rememberChatTurn("user", validatedMessage);
+    const workspaceAgentReply = await maybeHandleWorkspaceAgentChat(validatedMessage);
+    if (workspaceAgentReply) {
+      rememberChatTurn("assistant", workspaceAgentReply);
+      return workspaceAgentReply;
+    }
     if (detectFullControlRevokeRequest(validatedMessage)) {
       const status = revokeFullControlSession("chat");
       const reply = "Full Control is now off. I will go back to normal approval rules.";
@@ -5780,6 +5868,8 @@ function registerHandlers() {
   );
   trustedHandle("blue:discord-disconnect", async () => discordAddon.disconnect());
   trustedHandle("blue:capabilities", async () => blue(["capabilities"]));
+  trustedHandle("blue:feature-catalog", async () => blueFeatureService.catalog());
+  trustedHandle("blue:feature-action", async (_event, value) => blueFeatureService.execute(value));
   trustedHandle("blue:research-catalog", async () => blue(["research-catalog"]));
   trustedHandle("blue:learning-records", async () => formatLearningRecords());
   trustedHandle("blue:learning-capture", async (_event, value) => {
@@ -6246,6 +6336,110 @@ function registerHandlers() {
       securityScanning = false;
     }
   });
+  trustedHandle("blue:workspace-agent", async (_event, command) => workspaceAgent.runSlash(String(command || "/workspace")));
+  trustedHandle("blue:workspace-agent-action", async (_event, action) => workspaceAgent.execute(action));
+  trustedHandle("blue:workbench-context", async (_event, uiContext) => workbenchContextService.snapshot(uiContext));
+  trustedHandle("blue:workbench-activity", async (_event, limit) => workbenchContextService.activity(limit));
+  trustedHandle("blue:workbench-observe", async (_event, value) => proactiveBlueService.observe(value?.type || "workbench.event", value?.details || {}, value?.uiContext || null));
+  trustedHandle("blue:workbench-suggestions", async (_event, limit) => proactiveBlueService.suggestions(limit));
+  trustedHandle("blue:workbench-suggestion-dismiss", async (_event, id) => proactiveBlueService.dismiss(String(id || "")));
+  trustedHandle("blue:workspace-context", async () => workspaceAgent.runSlash("/workspace"));
+  trustedHandle("blue:workspace-search", async (_event, query) => workspaceAgent.runSlash(`/search ${String(query || "")}`));
+  trustedHandle("blue:workspace-symbols", async (_event, query) => workspaceAgent.runSlash(`/symbols ${String(query || "")}`));
+  trustedHandle("blue:workspace-git", async () => gitService.status());
+  trustedHandle("blue:git-diff", async (_event, value) => gitService.diff(value?.path, value?.staged));
+  trustedHandle("blue:git-stage", async (_event, files) => gitService.stage(files));
+  trustedHandle("blue:git-unstage", async (_event, files) => gitService.unstage(files));
+  trustedHandle("blue:git-branches", async () => gitService.branches());
+  trustedHandle("blue:git-switch", async (_event, value) => gitService.switchBranch(value?.name, value?.approved));
+  trustedHandle("blue:git-commit", async (_event, value) => gitService.commit(value?.message, value?.approved));
+  trustedHandle("blue:git-pull", async (_event, value) => {
+    const result = await gitService.pull(value?.approved);
+    await observeWorkbench("git.pulled", { output: result.output, branch: result.status?.branch });
+    return result;
+  });
+  trustedHandle("blue:git-push", async (_event, value) => gitService.push(value?.approved));
+  trustedHandle("blue:git-history", async (_event, limit) => gitService.history(limit));
+  trustedHandle("blue:git-attribution", async (_event, value) => gitService.attribution(value?.path, value?.limit));
+  trustedHandle("blue:lsp-status", async () => languageService.status());
+  trustedHandle("blue:lsp-open", async (_event, value) => languageService.open(value));
+  trustedHandle("blue:lsp-completion", async (_event, value) => languageService.completion(value));
+  trustedHandle("blue:lsp-hover", async (_event, value) => languageService.hover(value));
+  trustedHandle("blue:lsp-signature", async (_event, value) => languageService.signature(value));
+  trustedHandle("blue:lsp-definition", async (_event, value) => languageService.definition(value));
+  trustedHandle("blue:lsp-references", async (_event, value) => languageService.references(value));
+  trustedHandle("blue:lsp-rename", async (_event, value) => languageService.rename(value));
+  trustedHandle("blue:lsp-formatting", async (_event, value) => languageService.formatting(value));
+  trustedHandle("blue:lsp-code-actions", async (_event, value) => languageService.codeActions(value));
+  trustedHandle("blue:lsp-semantic-tokens", async (_event, value) => languageService.semanticTokens(value));
+  trustedHandle("blue:lsp-document-symbols", async (_event, value) => languageService.documentSymbols(value));
+  trustedHandle("blue:lsp-workspace-symbols", async (_event, query) => languageService.workspaceSymbols(query));
+  trustedHandle("blue:lsp-apply-edit", async (_event, value) => languageService.applyWorkspaceEdit(value?.edit, value?.approved));
+  trustedHandle("blue:debug-status", async () => debugService.status());
+  trustedHandle("blue:debug-profiles", async () => debugService.profiles());
+  trustedHandle("blue:debug-profile-save", async (_event, value) => debugService.saveProfile(value));
+  trustedHandle("blue:debug-start", async (_event, value) => debugService.start(value));
+  trustedHandle("blue:debug-list", async () => debugService.list());
+  trustedHandle("blue:debug-breakpoints", async (_event, value) => debugService.setBreakpoints(value?.sessionId, value));
+  trustedHandle("blue:debug-command", async (_event, value) => debugService.command(value?.sessionId, value?.command, value?.args));
+  trustedHandle("blue:debug-stop", async (_event, sessionId) => debugService.stop(sessionId));
+  trustedHandle("blue:test-discover", async () => testService.discover());
+  trustedHandle("blue:test-run", async (_event, value) => testService.run(value));
+  trustedHandle("blue:test-history", async () => testService.history());
+  trustedHandle("blue:test-debug", async (_event, testId) => debugService.start(testService.debugConfiguration(testId)));
+  trustedHandle("blue:extension-list", async () => extensionService.list());
+  trustedHandle("blue:extension-install", async (_event, value) => extensionService.install(value?.source === "$bundled-sample" ? path.join(__dirname, "sample-extension") : value?.source, value?.approved === true));
+  trustedHandle("blue:extension-uninstall", async (_event, value) => extensionService.uninstall(value?.id, value?.approved === true));
+  trustedHandle("blue:extension-enable", async (_event, value) => extensionService.setEnabled(value?.id, value?.enabled === true));
+  trustedHandle("blue:extension-activate", async (_event, value) => extensionService.activate(value?.id, value?.event || "onStartup"));
+  trustedHandle("blue:extension-deactivate", async (_event, id) => extensionService.deactivate(id));
+  trustedHandle("blue:extension-command", async (_event, value) => extensionService.executeCommand(value?.command, value?.args));
+  trustedHandle("blue:editor-open", async (_event, filePath) => editorService.open(String(filePath || "")));
+  trustedHandle("blue:editor-update", async (_event, value) => editorService.update(value?.sessionId, value?.content));
+  trustedHandle("blue:editor-undo", async (_event, sessionId) => editorService.undo(sessionId));
+  trustedHandle("blue:editor-redo", async (_event, sessionId) => editorService.redo(sessionId));
+  trustedHandle("blue:editor-save", async (_event, value) => editorService.save(value?.sessionId, {
+    overwriteExternal: value?.overwriteExternal === true
+  }));
+  trustedHandle("blue:editor-find", async (_event, value) => editorService.find(value?.sessionId, value?.query, value?.options));
+  trustedHandle("blue:editor-replace", async (_event, value) => editorService.replace(
+    value?.sessionId, value?.query, value?.replacement, value?.options
+  ));
+  trustedHandle("blue:editor-diff", async (_event, sessionId) => editorService.compareWithDisk(sessionId));
+  trustedHandle("blue:editor-recovery", async () => editorService.recoverable());
+  trustedHandle("blue:editor-restore", async (_event, filePath) => editorService.restoreRecovery(filePath));
+  trustedHandle("blue:editor-files", async (_event, options) => editorService.listWorkspaceFiles(options));
+  trustedHandle("blue:editor-recent", async () => editorService.recentFiles());
+  trustedHandle("blue:editor-settings", async () => editorService.workspaceSettings());
+  trustedHandle("blue:editor-settings-update", async (_event, value) => editorService.updateWorkspaceSettings(value));
+  trustedHandle("blue:editor-roots", async () => editorService.workspaceRoots().map(root => ({ ...root, path: root.primary ? root.path : undefined })));
+  trustedHandle("blue:editor-root-add", async () => {
+    const result = await dialog.showOpenDialog({ title: "Add Project Blue workspace root", properties: ["openDirectory"] });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true, roots: editorService.workspaceRoots() };
+    return { canceled: false, roots: editorService.addWorkspaceRoot(result.filePaths[0]) };
+  });
+  trustedHandle("blue:editor-root-remove", async (_event, rootId) => editorService.removeWorkspaceRoot(String(rootId || "")));
+  trustedHandle("blue:editor-references", async (_event, value) => editorService.findReferences(value?.query, value?.options));
+  trustedHandle("blue:editor-symbols", async (_event, options) => editorService.symbolIndex(options));
+  trustedHandle("blue:editor-workspace-changes", async (_event, previous) => editorService.workspaceChanges(previous));
+  trustedHandle("blue:editor-workspace-search", async (_event, value) => editorService.searchWorkspace(value?.query, value?.options));
+  trustedHandle("blue:editor-replace-preview", async (_event, value) => editorService.previewWorkspaceReplace(value?.query, value?.replacement, value?.options));
+  trustedHandle("blue:editor-status", async (_event, value) => editorService.checkExternal(value?.sessionId, {
+    reloadClean: value?.reloadClean !== false
+  }));
+  trustedHandle("blue:editor-close", async (_event, value) => editorService.close(value?.sessionId, {
+    discard: value?.discard === true
+  }));
+  trustedHandle("blue:terminal-profiles", async () => terminalService.profiles().map(({ executable, args, ...profile }) => profile));
+  trustedHandle("blue:terminal-list", async () => terminalService.list());
+  trustedHandle("blue:terminal-create", async (_event, value) => terminalService.create(value));
+  trustedHandle("blue:terminal-write", async (_event, value) => terminalService.write(value?.sessionId, value?.data));
+  trustedHandle("blue:terminal-resize", async (_event, value) => terminalService.resize(value?.sessionId, value?.cols, value?.rows));
+  trustedHandle("blue:terminal-close", async (_event, sessionId) => terminalService.close(sessionId));
+  trustedHandle("blue:task-list", async () => terminalService.listTasks());
+  trustedHandle("blue:task-save", async (_event, value) => terminalService.saveTask(value));
+  trustedHandle("blue:task-delete", async (_event, taskId) => terminalService.deleteTask(taskId));
+  trustedHandle("blue:task-run", async (_event, taskId) => terminalService.runTask(taskId));
   trustedHandle("blue:control-audit", async () => auditControlCenter(__dirname));
   trustedHandle("blue:bluemesh-status", async () => blueMeshStatusSummary());
   trustedHandle("blue:bluemesh-token", async () => blueMesh(["token"], 10000));
@@ -6559,6 +6753,7 @@ if (singleInstanceLock) {
 
 app.whenReady().then(() => {
   if (!singleInstanceLock) return;
+  observeWorkbench("project.opened", { version: desktopVersion, workspace: path.basename(repoRoot) });
   appendActivity(activityLedgerPath, "system", "Blue desktop presence started", {
     version: "3.3.0",
     desktopVersion,
@@ -6572,6 +6767,20 @@ app.whenReady().then(() => {
   if (process.env.BLUE_MOTION_SMOKE) startWandering();
   if (process.env.BLUE_CAPTURE_DIR) {
     setTimeout(() => {
+      if (process.env.BLUE_CONTROL_SMOKE === "1") {
+        const smokeWidth = Math.max(900, Number(process.env.BLUE_CONTROL_SMOKE_WIDTH) || 1920);
+        const smokeHeight = Math.max(640, Number(process.env.BLUE_CONTROL_SMOKE_HEIGHT) || 1080);
+        controlWindow.setContentSize(smokeWidth, smokeHeight);
+        controlWindow.webContents.executeJavaScript(
+          'document.querySelector("#startupModelKeep")?.click(); selectTab("workspace", "workspace-home");'
+        ).catch(error => console.error("Control smoke setup failed:", error));
+      }
+      if (process.env.BLUE_STREAMING_SMOKE === "1") {
+        controlWindow.setContentSize(1920, 1080);
+        controlWindow.webContents.executeJavaScript(
+          'document.querySelector("#startupModelKeep")?.click(); selectTab("streaming", "streaming-studio"); document.querySelector("#streamingStatusRefresh")?.click();'
+        ).catch(error => console.error("Streaming smoke setup failed:", error));
+      }
       if (process.env.BLUE_SECURITY_SMOKE === "1") {
         controlWindow.webContents.executeJavaScript(
           'selectTab("security"); document.querySelector("#securityScan").click();'
@@ -6618,6 +6827,10 @@ app.on("before-quit", () => {
   clearTimeout(petRecoveryTimer);
   clearTimeout(controlRecoveryTimer);
   voiceAbortController?.abort();
+  terminalService.closeAll();
+  languageService.stopAll().catch(() => {});
+  debugService.stopAll().catch(() => {});
+  extensionService.stop().catch(() => {});
   if (phoneBridgeServer) phoneBridgeServer.close();
   discordAddon.disconnect();
 });

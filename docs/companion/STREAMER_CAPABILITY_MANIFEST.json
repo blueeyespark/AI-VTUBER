@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-14",
+  "purpose": "Source-controlled contract preventing Project Blue streamer ideas from disappearing during UI rebuilds or updates.",
+  "identity": "Blue and Qwen may run on different trusted nodes, but streaming plans remain part of the shared Project Blue capability set.",
+  "capabilities": [
+    { "id": "ai_show_runner", "editor": "stream-setup", "backend": "buildStreamerShowPlan/buildStreamerRunOfShow", "status": "working_planner" },
+    { "id": "neuro_style_formats", "editor": "stream-setup", "backend": "streamShowCatalog", "status": "working_planner" },
+    { "id": "guarded_autonomy", "editor": "stream-setup", "backend": "streamingAutonomyCatalog", "status": "working_planner" },
+    { "id": "obs_websocket", "editor": "obs", "backend": "obsRequest", "status": "working_when_obs_configured" },
+    { "id": "scene_inspection_and_approved_switch", "editor": "scenes", "backend": "blue:streaming-obs-scenes/blue:streaming-obs-switch-scene", "status": "working_when_obs_configured" },
+    { "id": "sfw_platform_catalog", "editor": "platforms", "backend": "streamingPlatformCatalog", "status": "working_catalog" },
+    { "id": "adult_platform_catalog", "editor": "platforms", "backend": "adultPlatformReadiness", "status": "working_readiness_with_approval_gates" },
+    { "id": "platform_chat_readiness", "editor": "stream-chat", "backend": "streamingChatGuide", "status": "planner_adapters_vary" },
+    { "id": "chat_moderation", "editor": "moderation", "backend": "moderateChatMessage", "status": "working_local_guard" },
+    { "id": "titles_and_metadata", "editor": "titles", "backend": "local draft only", "status": "working_draft_not_publisher" },
+    { "id": "vrm_live2d_warudo_hybrid", "editor": "avatar-output", "backend": "avatarBackend", "status": "working_configuration_external_backends_vary" },
+    { "id": "stream_voice_profile", "editor": "avatar-output", "backend": "voiceProfile and Project Blue voice controls", "status": "working_configuration" },
+    { "id": "full_stream_preflight", "editor": "stream-setup", "backend": "buildStreamingPreflight", "status": "working" },
+    { "id": "session_only_secrets", "editor": "obs", "backend": "sanitizeStreamingConfig", "status": "enforced" },
+    { "id": "approval_gated_live_actions", "editor": "scenes", "backend": "trusted IPC handlers", "status": "enforced" }
+  ],
+  "requiredPlatforms": [
+    "twitch", "youtube", "kick", "tiktok_live", "instagram_live", "facebook_live", "x_live", "rumble", "trovo", "steam_broadcast", "picarto", "discord", "custom_rtmp",
+    "joystick", "fansly", "onlyfans", "chaturbate", "stripchat", "camsoda", "manyvids", "myfreecams", "bongacams", "livejasmin", "loyalfans", "custom_adult"
+  ],
+  "requiredShowFormats": ["neuro_chat", "game_companion", "creator_lab", "art_modeling", "music_voice", "adult_verified"],
+  "requiredEditors": ["streaming-studio", "stream-setup", "obs", "scenes", "platforms", "stream-chat", "moderation", "titles", "avatar-output"]
+}

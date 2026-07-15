@@ -14,27 +14,18 @@
     </div>
     <div class="command-shell">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4a5.5 5.5 0 0 1 4.35 8.86l4.64 4.65-1.42 1.42-4.64-4.64A5.5 5.5 0 1 1 9.5 4Zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg>
-      <input id="commandSearch" list="blueCommands" autocomplete="off"
+      <input id="commandSearch" autocomplete="off"
         placeholder="Search controls or type a command... (Ctrl+K)"
-        aria-label="Search Blue controls">
-      <datalist id="blueCommands">
-        <option value="New conversation"></option>
-        <option value="Chat"></option>
-        <option value="Share"></option>
-        <option value="Voice"></option>
-        <option value="Presence and privacy"></option>
-        <option value="Create and idea lab"></option>
-        <option value="Expansion foundations"></option>
-        <option value="Movement and expressions"></option>
-        <option value="Discord"></option>
-        <option value="Security status"></option>
-        <option value="System health"></option>
-        <option value="Share files"></option>
-        <option value="Scan image text"></option>
-      </datalist>
+        aria-label="Search Blue controls" aria-haspopup="listbox"
+        aria-expanded="false" aria-controls="commandPaletteResults">
     </div>
     <button id="hide">Minimize to tray</button>
   </header>
+  <div id="commandPalette" class="command-palette" hidden>
+    <div class="command-palette-heading"><span>Command Center</span><kbd>Esc</kbd></div>
+    <div id="commandPaletteResults" class="command-palette-results" role="listbox" aria-label="Project Blue commands"></div>
+    <div class="command-palette-hint">Type <strong>&gt;</strong> for commands. Use Up/Down to select and Enter to run.</div>
+  </div>
   <div class="status-row global-status" aria-live="polite">
     <span id="presenceState" class="status-chip good">Presence: idle</span>
     <span id="visionState" class="status-chip safe">Vision: Off</span>
@@ -65,16 +56,18 @@
       </div>
     </section>
   </div>
-  <nav id="activityBar" class="activity-bar" aria-label="Project Blue activities">
-    <button data-tab="overview" title="Overview" aria-label="Overview"></button>
+    <nav id="activityBar" class="activity-bar" aria-label="Project Blue activities">
     <button data-tab="workspace" title="Workspace" aria-label="Workspace"></button>
-    <button data-tab="ai" title="AI & Presence" aria-label="AI & Presence"></button>
-    <button data-tab="systems" title="Systems" aria-label="Systems"></button>
-    <button data-tab="tools" title="Tools" aria-label="Tools"></button>
+    <button data-tab="search" title="Search" aria-label="Search"></button>
+    <button data-tab="git" title="Git" aria-label="Git"></button>
+    <button data-tab="run" title="Run" aria-label="Run"></button>
     <button data-tab="streaming" title="Streaming" aria-label="Streaming"></button>
-    <button data-tab="discord" title="Discord" aria-label="Discord"></button>
     <button data-tab="mesh" title="BlueMesh" aria-label="BlueMesh"></button>
     <button data-tab="settings" title="Settings" aria-label="Settings"></button>
+    <button data-tab="extensions" title="Extensions" aria-label="Extensions"></button>
+    <button data-tab="diagnostics" title="Diagnostics" aria-label="Diagnostics"></button>
+    <button data-tab="ai" title="AI & Presence" aria-label="AI and Presence"></button>
+    <button data-tab="discord" title="Discord" aria-label="Discord"></button>
   </nav>
   <aside id="contextSidebar" class="context-sidebar" aria-label="Context sidebar">
     <div class="sidebar-title">Workspace</div>
@@ -83,16 +76,35 @@
   <main>
     <div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open editors"></div>
     <div class="editor-surface">
-    <section data-panel="overview" data-editor="welcome">
-      <h2>Good to see you.</h2>
-      <p>Project Blue is organized as one desktop workbench. Use the activity icons to move between tools, or press Ctrl+K and type a command.</p>
-      <div class="grid">
-        <button data-open-activity="workspace" data-open-editor="blue-chat">Open Workspace</button>
-        <button data-open-activity="tools" data-open-editor="diagnostics" class="secondary">Open Diagnostics</button>
-        <button data-open-activity="mesh" data-open-editor="identity" class="secondary">Open BlueMesh</button>
+    <section data-panel="workspace" data-editor="workspace-home" class="alive-dashboard">
+      <div class="alive-hero">
+        <div>
+          <p class="eyebrow">Blue Operating Workspace</p>
+          <h2>Blue is watching the workbench with you.</h2>
+          <p>Workspace awareness, recent activity, suggestions, pet state, streaming, BlueMesh, and open work all meet here.</p>
+        </div>
+        <div class="alive-presence" aria-live="polite">
+          <span id="aliveMood">Attentive</span>
+          <strong id="aliveFocus">Workspace steady</strong>
+        </div>
       </div>
+      <div class="alive-dashboard-grid">
+        <article class="alive-card"><span>Today's Progress</span><strong id="dashProgress">Loading checks…</strong><button data-open-activity="diagnostics" data-open-editor="diagnostics" class="secondary small">Open Diagnostics</button></article>
+        <article class="alive-card"><span>Continue Previous Session</span><strong id="dashSession">Blue Desktop Pet</strong><button data-open-activity="workspace" data-open-editor="blue-chat" class="secondary small">Continue Chat</button></article>
+        <article class="alive-card"><span>Open Tasks</span><strong id="dashTasks">No task selected</strong><button data-open-activity="run" data-open-editor="tasks" class="secondary small">Run / Tasks</button></article>
+        <article class="alive-card"><span>Recent Git Activity</span><strong id="dashGit">Not checked yet</strong><button id="dashGitRefresh" class="secondary small">Check Git</button></article>
+        <article class="alive-card"><span>Research Queue</span><strong id="dashResearch">Ready for questions</strong><button data-open-activity="research" data-open-editor="research-lab" class="secondary small">Research</button></article>
+        <article class="alive-card"><span>Running Background Tasks</span><strong id="dashBackground">Idle</strong><button data-bottom-tab="activity" class="secondary small">Activity Log</button></article>
+        <article class="alive-card"><span>Streaming Status</span><strong id="dashStreaming">OBS disconnected</strong><button data-open-activity="streaming" data-open-editor="streaming-studio" class="secondary small">Streaming</button></article>
+        <article class="alive-card"><span>Desktop Pet Status</span><strong id="dashPet">Present, calm idle</strong><button data-open-activity="ai" data-open-editor="avatar" class="secondary small">Avatar</button></article>
+        <article class="alive-card"><span>BlueMesh Status</span><strong id="dashBlueMesh">Installed</strong><button data-open-activity="mesh" data-open-editor="identity" class="secondary small">BlueMesh</button></article>
+        <article class="alive-card"><span>Workspace Health</span><strong id="dashHealth">Healthy</strong><button id="dashFunctionCheck" class="secondary small">Check Functions</button></article>
+        <article class="alive-card"><span>Recent Files</span><strong id="dashFiles">Open Workspace to inspect</strong><button data-open-activity="workspace" data-open-editor="file-preview" class="secondary small">Workspace Files</button></article>
+        <article class="alive-card suggestion-card"><span>Blue Suggestions</span><strong id="dashSuggestions">I can inspect recent changes, scan files, or prepare streaming.</strong><button data-open-activity="workspace" data-open-editor="blue-chat" class="secondary small">Ask Blue</button></article>
+      </div>
+      <div id="proactiveNotice" class="proactive-notice" aria-live="polite">Blue is ready. Open files, run checks, or ask for a plan.</div>
     </section>
-    <section data-panel="overview" data-editor="function-map" hidden>
+    <section data-panel="diagnostics" data-editor="function-health" hidden>
       <h2>Function Map</h2>
       <pre id="functionMapDetails">Run Check Functions from Tools to verify UI wiring.</pre>
     </section>
@@ -121,6 +133,17 @@
       <button id="deleteObservation" class="secondary">Delete Selected Observation</button>
       <p class="hint">Blue does not watch your screen automatically. Observation History only records metadata for images you deliberately share. Vision and microphone capture remain unavailable until permission-gated providers are built.</p>
       <pre id="presenceDetails">Loading local presence status...</pre>
+    </section>
+        <section data-panel="workspace" data-editor="project-notes" hidden>
+      <h2>Workspace</h2>
+      <p class="hint">Open files, research, ideas, diagnostics, and generated results in editor tabs. Blue Chat stays docked on the right like a Codex panel so it can help while you work.</p>
+      <div class="workspace-home-grid">
+        <button data-open-editor="file-preview">Open File Preview</button>
+        <button data-open-activity="research" data-open-editor="research-lab" class="secondary">Open Research Lab</button>
+        <button data-open-activity="research" data-open-editor="idea-lab" class="secondary">Open Idea Lab</button>
+        <button data-open-activity="diagnostics" data-open-editor="diagnostics" class="secondary">Open Diagnostics</button>
+      </div>
+      <pre id="workspaceAgentPreview">Tip: type /workspace, /files, /search, /symbols, /git, /diagnostics, or /plan in Blue Chat.</pre>
     </section>
     <section class="chat workspace-editor" data-panel="workspace" data-editor="blue-chat">
       <div class="workspace-editor-layout">
@@ -360,9 +383,49 @@
       <pre id="expansionDetails">Loading expansion foundations...</pre>
     </section>
     <section data-panel="workspace" data-editor="file-preview" hidden>
-      <h2>File Preview</h2>
-      <p class="hint">Files, folders, pasted links, OCR output, and selected project context open here when Blue inspects them.</p>
-      <pre>Nothing selected yet.</pre>
+      <div class="blue-code-editor" id="blueCodeEditor">
+        <div class="blue-editor-toolbar">
+          <input id="editorPath" aria-label="Workspace-relative file path" placeholder="Project Blue App/desktop_pet/control.js">
+          <button id="editorOpen">Open</button>
+          <button id="editorSave" class="secondary" disabled>Save</button>
+          <button id="editorUndo" class="secondary" disabled>Undo</button>
+          <button id="editorRedo" class="secondary" disabled>Redo</button>
+          <button id="editorCompare" class="secondary" disabled>Compare</button>
+          <button id="editorSplit" class="secondary" disabled>Split</button>
+          <button id="editorRecover" class="secondary">Recovery</button>
+        </div>
+        <div class="blue-editor-breadcrumbs" id="editorBreadcrumbs">Workspace / No file open</div>
+        <div class="blue-editor-findbar">
+          <input id="editorFind" aria-label="Find in file" placeholder="Find">
+          <input id="editorReplace" aria-label="Replace in file" placeholder="Replace">
+          <label><input id="editorMatchCase" type="checkbox"> Match case</label>
+          <label><input id="editorWholeWord" type="checkbox"> Whole word</label>
+          <label><input id="editorRegex" type="checkbox"> Regex</label>
+          <button id="editorFindRun" class="secondary" disabled>Find</button>
+          <button id="editorReplaceOne" class="secondary" disabled>Replace</button>
+          <button id="editorReplaceAll" class="secondary" disabled>Replace All</button>
+        </div>
+        <div class="language-toolbar" aria-label="Language intelligence">
+          <span id="lspServerState" class="language-state">Language server: idle</span>
+          <button id="lspCompletion" class="secondary" disabled>Complete</button>
+          <button id="lspHover" class="secondary" disabled>Hover</button>
+          <button id="lspSignature" class="secondary" disabled>Signature</button>
+          <button id="lspDefinition" class="secondary" disabled>Definition</button>
+          <button id="lspReferences" class="secondary" disabled>References</button>
+          <button id="lspRename" class="secondary" disabled>Rename</button>
+          <button id="lspFormat" class="secondary" disabled>Format</button>
+          <button id="lspCodeActions" class="secondary" disabled>Code Actions</button>
+          <button id="lspSymbols" class="secondary" disabled>Symbols</button>
+          <button id="lspWorkspaceSymbols" class="secondary" disabled>Workspace Symbols</button>
+        </div>
+        <div id="editorGroups" class="blue-editor-groups">
+          <div id="monacoEditorPrimary" class="monaco-editor-host" aria-label="Project file editor"></div>
+          <div id="monacoEditorSecondary" class="monaco-editor-host" hidden aria-label="Split project file editor"></div>
+          <textarea id="editorContent" class="blue-editor-textarea" aria-label="Project file editor fallback" spellcheck="false" disabled placeholder="Open a workspace file to begin editing."></textarea>
+        </div>
+        <div class="blue-editor-status" id="editorStatus">No file open. Paths are confined to the Project Blue workspace.</div>
+        <pre id="lspResult" class="language-result" hidden>Language results appear here.</pre>
+      </div>
     </section>
     <section data-panel="workspace" data-editor="generated-result" hidden>
       <h2>Generated Result</h2>
@@ -404,14 +467,84 @@
       </div>
       <p class="hint">In OBS, add a Window Capture source named "Blue 3D Pet - OBS Capture".</p>
     </section>
-    <section data-panel="streaming" data-editor="streaming-studio" hidden>
-      <h2>Streaming Studio</h2>
-      <p class="hint">Streaming tools are grouped here for OBS, scenes, platform setup, chat reading, moderation, titles, and avatar output. Existing OBS/streaming backend modules are preserved for the next wiring pass.</p>
-      <div class="grid"><button id="streamingStatusRefresh">Refresh Streaming Status</button><button data-open-editor="obs">OBS</button><button data-open-editor="platforms" class="secondary">Platforms</button><button data-open-editor="moderation" class="secondary">Moderation</button><button id="streamingChatReadiness" class="secondary">Chat Readiness</button><button id="streamingRulesCheck" class="secondary">Rules Check</button><button id="streamingModerationPlan" class="secondary">Moderation Plan</button><button id="streamingIndependencePlan" class="secondary">Independent Stream Plan</button><button id="streamingGoLiveChecklist" class="secondary">Go Live Checklist</button></div>
+    <section data-panel="streaming" data-editor="streaming-studio" class="streaming-workbench" hidden>
+      <div class="editor-heading"><div><h2>Streaming Studio</h2><p class="hint">Blue/Qwen's guarded AI-streamer workbench. Platform credentials and stream keys remain session-only.</p></div><button id="streamingStatusRefresh">Refresh status</button></div>
+      <div class="streaming-summary" aria-label="Streaming status summary">
+        <div><span>Platform</span><strong id="streamingSummaryPlatform">Loading...</strong></div>
+        <div><span>Mode</span><strong id="streamingSummaryMode">Loading...</strong></div>
+        <div><span>Avatar</span><strong id="streamingSummaryAvatar">Loading...</strong></div>
+        <div><span>Preflight</span><strong id="streamingSummaryPreflight">Not checked</strong></div>
+      </div>
+      <div class="streaming-launcher">
+        <button data-open-editor="stream-setup"><strong>Show Runner</strong><span>Neuro-style formats, autonomy, run-of-show</span></button>
+        <button data-open-editor="obs"><strong>OBS Control</strong><span>WebSocket health and capture guidance</span></button>
+        <button data-open-editor="scenes"><strong>Scenes</strong><span>Inspect first; approved scene switching</span></button>
+        <button data-open-editor="platforms"><strong>Platforms</strong><span>SFW, community, adult, and custom RTMP</span></button>
+        <button data-open-editor="stream-chat"><strong>Stream Chat</strong><span>Readiness, response modes, platform guides</span></button>
+        <button data-open-editor="moderation"><strong>Moderation</strong><span>Test chat against safety boundaries</span></button>
+        <button data-open-editor="titles"><strong>Titles & Metadata</strong><span>Draft titles, category, tags, and notes</span></button>
+        <button data-open-editor="avatar-output"><strong>Avatar Output</strong><span>VRM, Live2D, Warudo, hybrid, voice</span></button>
+      </div>
+      <pre id="streamingStatusDetails">Streaming state has not been loaded.</pre>
     </section>
-    <section data-panel="streaming" data-editor="obs" hidden><h2>OBS</h2><p class="hint">OBS websocket status, scene inspection, and safe scene-edit actions live here.</p><div class="grid"><button id="streamingObsSave">Save OBS Config</button><button id="streamingObsCheck">Check OBS Connection</button><button id="streamingObsSceneRefresh">Refresh Scenes</button><button id="streamingObsCaptureGuide">OBS Capture Guide</button><button id="streamingObsSceneSwitch" class="secondary">Switch Scene</button></div><pre id="streamingStatusDetails">OBS state: not connected.</pre></section>
-    <section data-panel="streaming" data-editor="platforms" hidden><h2>Platforms</h2><p class="hint">Safe-for-work and adult platform planning belongs here with platform rules and permission gates before any live automation.</p><div class="grid"><button id="streamingSavePlatform">Save Platform Plan</button><button id="streamingToggleVrm" class="secondary">Toggle VRM</button><button id="streamingToggleLive2d" class="secondary">Toggle Live2D</button><button id="streamingToggleWarudo" class="secondary">Toggle Warudo</button><button id="streamingVoiceSafety" class="secondary">Voice Safety</button><button id="streamingVoiceTest" class="secondary">Streaming Voice Test</button></div></section>
-    <section data-panel="streaming" data-editor="moderation" hidden><h2>Moderation</h2><p class="hint">Chat rules, banned words, platform boundaries, and approval modes are configured here.</p></section>
+    <section data-panel="streaming" data-editor="stream-setup" class="streaming-workbench" hidden>
+      <h2>AI Show Runner</h2><p class="hint">Prepare a paced show loop, personality beats, avatar reactions, and approval checkpoints. This creates a plan; it does not go live.</p>
+      <div class="streaming-form-grid">
+        <label>Show format<select id="streamingShowFormat"></select></label>
+        <label>Autonomy level<select id="streamingAutonomyLevel"></select></label>
+        <label>Stream mode<select id="streamingModeSelect"><option value="sfw">Safe for work</option><option value="mature_labeled">Mature labeled</option><option value="adult_verified">Adult verified</option><option value="platform_review">Platform review</option></select></label>
+        <label class="check-row"><input id="streamingIndependent" type="checkbox"> Guarded independent mode</label>
+      </div>
+      <div class="streaming-toolbar"><button id="streamingShowRunner">Build run-of-show</button><button id="streamingFullPreflight" class="secondary">Full stream preflight</button><button id="streamingIndependencePlan" class="secondary">Independent-stream policy</button><button id="streamingGoLiveChecklist" class="secondary">Go-live checklist</button></div>
+      <pre id="streamingShowOutput">Choose a format and build the run-of-show.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="obs" class="streaming-workbench" hidden>
+      <h2>OBS Control</h2><p class="hint">Project Blue uses OBS WebSocket 5.x. Passwords are used only for the current request and are never saved.</p>
+      <div class="streaming-form-grid"><label>WebSocket URL<input id="streamingObsUrl" value="ws://127.0.0.1:4455"></label><label>Session-only password<input id="streamingObsPassword" type="password" autocomplete="off" placeholder="Never saved"></label></div>
+      <div class="streaming-toolbar"><button id="streamingObsSave">Save nonsecret OBS URL</button><button id="streamingObsCheck">Check connection</button><button id="streamingObsCaptureGuide" class="secondary">Capture guide</button><button data-open-editor="scenes" class="secondary">Open Scenes</button></div>
+      <pre id="streamingObsOutput">OBS state: not connected.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="scenes" class="streaming-workbench" hidden>
+      <h2>OBS Scenes</h2><p class="hint">Blue reads the scene list before proposing a change. Switching the Program scene always requires the approval checkbox.</p>
+      <div class="streaming-form-grid"><label>Program scene<select id="streamingSceneSelect"><option value="">Refresh scenes first</option></select></label><label class="check-row"><input id="streamingSceneApprove" type="checkbox"> I approve switching to the selected scene</label></div>
+      <div class="streaming-toolbar"><button id="streamingObsSceneRefresh">Refresh scenes</button><button id="streamingObsSceneSwitch" class="secondary">Switch approved scene</button></div>
+      <pre id="streamingSceneOutput">No scene list loaded.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="platforms" class="streaming-workbench" hidden>
+      <h2>Platforms & Session Rules</h2><p class="hint">Catalogs describe supported planning/readiness modes. “Adapter required” does not mean the site is connected.</p>
+      <div class="streaming-form-grid">
+        <label>Target platform<select id="streamingPlatformSelect"></select></label>
+        <label>Chat behavior<select id="streamingChatMode"><option value="read_only">Read only</option><option value="moderated_reply">Draft replies for approval</option><option value="approved_actions">Pre-approved actions</option></select></label>
+        <label class="check-row"><input id="streamingRulesReviewed" type="checkbox"> Platform/category rules reviewed for this session</label>
+        <label class="check-row"><input id="streamingVerifiedAdults" type="checkbox"> All participants are verified consenting adults</label>
+        <label class="check-row"><input id="streamingAdultApproval" type="checkbox"> Creator approves adult-platform preparation for this session</label>
+      </div>
+      <div class="streaming-toolbar"><button id="streamingSavePlatform">Save nonsecret settings</button><button id="streamingRulesCheck" class="secondary">Rules & preflight</button><button id="streamingAdultReadiness" class="secondary">Adult-platform readiness</button></div>
+      <div id="streamingPlatformCatalog" class="streaming-catalog"></div><pre id="streamingPlatformOutput">Select a platform to inspect its adapter and safety requirements.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="stream-chat" class="streaming-workbench" hidden>
+      <h2>Stream Chat</h2><p class="hint">Twitch and YouTube have official-reader plans; Discord uses the approved bot channel. Other platforms require a documented creator-approved adapter.</p>
+      <div class="streaming-toolbar"><button id="streamingChatReadiness">Chat readiness</button><button id="streamingChatGuide" class="secondary">Platform chat guide</button><button data-open-editor="moderation" class="secondary">Test moderation</button></div>
+      <pre id="streamingChatOutput">Chat starts read-only. Replies and moderation stay approval-gated.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="moderation" class="streaming-workbench" hidden>
+      <h2>Moderation Workbench</h2><p class="hint">Test representative chat before a stream. Blue blocks doxxing, threats, harassment, non-consensual sexual content, and sexual content involving minors.</p>
+      <label>Sample chat message<textarea id="streamingModerationSample" rows="4" maxlength="1000" placeholder="Paste a representative message to test"></textarea></label>
+      <div class="streaming-toolbar"><button id="streamingModerationPlan">Evaluate sample</button><button id="streamingModerationRules" class="secondary">Review stream rules</button></div>
+      <pre id="streamingModerationOutput">No message evaluated.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="titles" class="streaming-workbench" hidden>
+      <h2>Titles & Metadata Draft</h2><p class="hint">Draft locally, then review in the target platform. Blue does not publish or change categories automatically.</p>
+      <div class="streaming-form-grid"><label>Stream title<input id="streamingTitleDraft" maxlength="140" placeholder="Stream title"></label><label>Category / game<input id="streamingCategoryDraft" maxlength="100" placeholder="Category or game"></label><label>Tags<input id="streamingTagsDraft" maxlength="300" placeholder="comma, separated, tags"></label></div>
+      <label>Producer notes<textarea id="streamingProducerNotes" rows="5" maxlength="3000" placeholder="Opening beat, topics, breaks, calls to action"></textarea></label>
+      <div class="streaming-toolbar"><button id="streamingMetadataPreview">Preview metadata</button><button id="streamingMetadataClear" class="secondary">Clear draft</button></div><pre id="streamingMetadataOutput">No metadata draft yet.</pre>
+    </section>
+    <section data-panel="streaming" data-editor="avatar-output" class="streaming-workbench" hidden>
+      <h2>Avatar & Voice Output</h2><p class="hint">Use one output layer for VRM, Live2D, Warudo, or hybrid staging without making external software a required dependency.</p>
+      <div class="streaming-form-grid"><label>Avatar backend<select id="streamingAvatarBackend"><option value="vrm">Blue 3D VRM</option><option value="live2d">Live2D</option><option value="warudo">Warudo stage</option><option value="hybrid">Hybrid</option></select></label><label>Voice profile<input id="streamingVoiceProfile" value="blue_original" maxlength="120"></label></div>
+      <div class="streaming-toolbar"><button id="streamingAvatarSave">Save output choice</button><button id="streamingToggleVrm" class="secondary">VRM plan</button><button id="streamingToggleLive2d" class="secondary">Live2D plan</button><button id="streamingToggleWarudo" class="secondary">Warudo plan</button><button id="streamingVoiceSafety" class="secondary">Voice safety</button><button id="streamingVoiceTest" class="secondary">Test voice</button></div>
+      <pre id="streamingAvatarOutput">Blue 3D VRM is the default output.</pre>
+    </section>
     <section data-panel="discord" data-editor="connection" hidden>
       <h2>Discord Add-on</h2>
       <p class="hint">Creates guild-only <code>/blue status</code> and <code>/blue ask</code> commands. Blue accepts only the configured guild/channel and optional user allowlist. The bot token stays in memory and is never saved.</p>
@@ -440,7 +573,7 @@
       <pre id="discordStatus">Discord add-on is disconnected.</pre>
       <p class="hint">Create the bot in Discord's Developer Portal and invite it to your server. Do not paste the token into chat, files, screenshots, or source code.</p>
     </section>
-    <section data-panel="systems" data-editor="security" hidden>
+    <section data-panel="diagnostics" data-editor="security" hidden>
       <h2>Windows Security Center</h2>
       <p class="hint">Blue manually reads Microsoft Defender, Windows Firewall, registered antivirus products, recent threat detections, and startup-entry names. It does not run a scan, quarantine files, modify startup, or change security settings.</p>
       <div class="security-summary">
@@ -453,7 +586,7 @@
       <pre id="securityDetails">Choose Read Security Status for a manual, read-only snapshot.</pre>
       <p class="hint">Blue is not an antivirus engine and cannot guarantee that a computer is malware-free. Use Windows Security or your installed security provider for scanning and remediation.</p>
     </section>
-    <section data-panel="tools" data-editor="diagnostics" hidden>
+    <section data-panel="diagnostics" data-editor="diagnostics" hidden>
       <h2>Tools and Diagnostics</h2>
       <div class="grid">
         <button id="devRunAudit">Run Function Audit</button>
@@ -562,19 +695,135 @@
     <section data-panel="mesh" data-editor="sync" hidden><h2>Sync</h2><div class="grid"><button id="blueMeshCopyServer" class="secondary">Copy Receiver Server Command</button><button id="blueMeshCopyPush" class="secondary">Copy Push Command</button></div><pre id="blueMeshDetails">LAN/Wi-Fi sync tools and bundle import/export status live here.</pre></section>
     <section data-panel="mesh" data-editor="conflicts" hidden><h2>Conflicts</h2><pre>Conflicts are reported here instead of overwriting shared memory.</pre></section>
     <section data-panel="mesh" data-editor="ledger" hidden><h2>Ledger</h2><pre>Append-only BlueMesh changes appear here.</pre></section>
-    <section data-panel="settings" data-editor="settings" hidden><h2>Settings</h2><p class="hint">Layout, startup, model, privacy, and path preferences live here.</p><div class="grid"><button id="settingsOpenProject">Open Blue Folder</button><button id="settingsRunAudit" class="secondary">Run Function Audit</button></div></section>
+    <section data-panel="search" data-editor="search-results" hidden>
+      <div class="editor-header compact"><div><p class="eyebrow">Workspace</p><h2>Search</h2><p class="hint">Search indexed Project Blue files and open matches at the correct line.</p></div></div>
+      <div class="workbench-search-box"><input id="workbenchSearchInput" placeholder="Search workspace"><button id="workbenchSearchRun">Search</button></div>
+      <div class="row compact"><label><input id="workbenchSearchRegex" type="checkbox"> Regex</label><label><input id="workbenchSearchCase" type="checkbox"> Match case</label><label><input id="workbenchSearchWord" type="checkbox"> Whole word</label></div>
+      <div class="grid"><input id="workbenchSearchInclude" placeholder="Include paths, e.g. **/*.js,docs/**"><input id="workbenchSearchExclude" placeholder="Exclude paths, e.g. test/**,dist/**"></div>
+      <div class="workbench-search-box"><input id="workbenchReplaceInput" placeholder="Replacement preview"><button id="workbenchReplacePreview" class="secondary">Preview Replace</button></div>
+      <div id="workbenchSearchResults" class="search-result-tree" aria-live="polite">Enter a query to search real workspace files.</div>
+    </section>
+    <section data-panel="git" data-editor="source-control" hidden>
+      <div class="editor-header compact"><div><p class="eyebrow">Source Control</p><h2>Project Blue repository</h2><p class="hint">Stage only selected paths. Commit, branch, pull, and push actions require explicit approval.</p></div><div class="editor-toolbar-actions"><button id="sourceRefreshGit">Refresh</button><button id="sourceHistoryGit" class="secondary">History</button></div></div>
+      <div class="git-summary"><strong id="gitBranch">Branch: loading</strong><span id="gitUpstream">No upstream</span><span id="gitCleanState">Reading status...</span></div>
+      <div class="git-workbench"><div class="git-changes"><h3>Changes</h3><div id="gitChangeList" class="git-change-list">Loading Git status...</div></div><div class="git-review"><div class="editor-toolbar-actions"><button id="gitStageSelected">Stage selected</button><button id="gitUnstageSelected" class="secondary">Unstage selected</button><button id="gitDiffSelected" class="secondary">Open diff</button><button id="gitAttribution" class="secondary">Attribution</button></div><pre id="gitDetails">Select a changed file to review it.</pre></div></div>
+      <div class="git-actions"><textarea id="gitCommitMessage" rows="2" placeholder="Commit message"></textarea><label class="approval-check"><input id="gitApproval" type="checkbox"> I approve this repository-changing action</label><div class="editor-toolbar-actions"><button id="gitCommit">Commit staged</button><select id="gitBranchSelect" aria-label="Branch"></select><button id="gitSwitch" class="secondary">Switch branch</button><button id="gitPull" class="secondary">Pull (fast-forward)</button><button id="gitPush" class="secondary">Push</button></div><pre id="gitActionStatus">No Git mutation has run.</pre></div>
+    </section>
+    <section data-panel="git" data-editor="diff-review" hidden><div class="editor-header compact"><div><p class="eyebrow">Source Control</p><h2 id="gitDiffTitle">Diff review</h2></div></div><pre id="gitDiffOutput" class="git-diff-output">Choose a file in Source Control.</pre></section>
+    <section data-panel="run" data-editor="tests" hidden>
+      <div class="test-workbench">
+        <header class="test-toolbar">
+          <strong>Test Explorer</strong><span id="testSummary" class="muted">Discover workspace tests to begin.</span>
+          <button id="testDiscover">Refresh</button><button id="testRunAll">Run All</button><button id="testRunFile" class="secondary" disabled>Run File</button><button id="testRunSelected" class="secondary" disabled>Run Test</button><button id="testDebugSelected" class="secondary" disabled>Debug Test</button>
+        </header>
+        <div class="test-layout">
+          <aside class="test-explorer-pane"><div class="pane-title">Workspace Tests</div><div id="testExplorer" class="test-tree" role="tree">No tests discovered.</div><div class="pane-title">Result History</div><div id="testHistory" class="test-history">No test runs yet.</div></aside>
+          <main class="test-results-pane"><div class="pane-title">Results <span class="muted">Select a failed test to open its source.</span></div><div id="testResults" class="test-results">Test results will appear here.</div><div class="pane-title">Test Output</div><pre id="testOutput" class="test-output" tabindex="0">Ready.</pre></main>
+        </div>
+      </div>
+    </section>
+
+    <section data-panel="run" data-editor="tasks" hidden>
+      <div class="editor-header compact"><div><p class="eyebrow">Run</p><h2>Tasks</h2><p class="hint">Saved Project Blue build, test, normal, and background tasks run in supervised terminal sessions.</p></div><div class="editor-toolbar-actions"><button id="taskRefresh">Refresh</button><button data-open-editor="terminal-editor" class="secondary">Open Terminal</button></div></div>
+      <div class="task-workbench">
+        <div><h3>Saved tasks</h3><div id="taskList" class="task-list">Loading tasks...</div></div>
+        <form id="taskForm" class="settings-group compact-form"><h3>Task definition</h3><input id="taskId" placeholder="task-id"><input id="taskLabel" placeholder="Task label"><select id="taskType"><option value="task">Task</option><option value="build">Build</option><option value="test">Test</option><option value="background">Background</option></select><select id="taskProfile"><option value="powershell">PowerShell</option><option value="cmd">Command Prompt</option><option value="git-bash">Git Bash</option><option value="python">Python</option></select><input id="taskCwd" value="." placeholder="Workspace-relative working directory"><textarea id="taskCommand" rows="4" placeholder="Command"></textarea><div class="editor-toolbar-actions"><button id="taskSave" type="submit">Save Task</button><button id="taskClear" type="button" class="secondary">Clear</button></div><pre id="taskStatus">Tasks are stored locally and never contain terminal secrets automatically.</pre></form>
+      </div>
+    </section>
+    <section data-panel="run" data-editor="debugger" hidden>
+      <div class="debugger-shell">
+        <div class="debugger-toolbar">
+          <select id="debugRuntime" aria-label="Debug runtime"><option value="python">Python (Debugpy)</option><option value="node">Node.js</option></select>
+          <select id="debugRequest" aria-label="Debug request"><option value="launch">Launch</option><option value="attach">Attach</option></select>
+          <input id="debugProgram" placeholder="Workspace-relative program path">
+          <input id="debugCwd" value="." placeholder="Working directory">
+          <button id="debugStart">Start</button><button id="debugStop" class="secondary" disabled>Stop</button>
+          <button id="debugContinue" class="secondary" disabled>Continue</button><button id="debugPause" class="secondary" disabled>Pause</button>
+          <button id="debugStepOver" class="secondary" disabled>Step Over</button><button id="debugStepInto" class="secondary" disabled>Step Into</button><button id="debugStepOut" class="secondary" disabled>Step Out</button>
+        </div>
+        <div class="debugger-grid">
+          <aside class="debugger-sidebar">
+            <label>Launch profile name<input id="debugProfileName" placeholder="Blue debug"></label>
+            <label>Arguments<input id="debugArgs" placeholder="--flag value"></label>
+            <label>Attach WebSocket URL<input id="debugAttachUrl" placeholder="ws://127.0.0.1:9229/..." disabled></label>
+            <button id="debugProfileSave" class="secondary">Save Launch Profile</button>
+            <label>Breakpoints (line or line: condition)<textarea id="debugBreakpoints" rows="5" placeholder="4&#10;8: value &gt; 2"></textarea></label>
+            <button id="debugApplyBreakpoints" class="secondary" disabled>Apply Breakpoints</button>
+            <label>Watch expression<input id="debugWatchExpression" placeholder="variable or expression"></label>
+            <button id="debugWatch" class="secondary" disabled>Evaluate Watch</button>
+          </aside>
+          <main class="debugger-main">
+            <div class="debugger-pane"><h3>Call Stack</h3><div id="debugCallStack" class="debug-tree">No paused session.</div></div>
+            <div class="debugger-pane"><h3>Variables</h3><div id="debugVariables" class="debug-tree">Pause at a breakpoint to inspect variables.</div></div>
+            <div class="debugger-pane debug-console-pane"><h3>Debug Console</h3><pre id="debugConsole">Debugger ready.</pre><div class="debug-console-input"><input id="debugConsoleInput" placeholder="Evaluate expression"><button id="debugEvaluate" class="secondary" disabled>Evaluate</button></div></div>
+          </main>
+        </div>
+        <div id="debugStatus" class="terminal-status">No debug session selected.</div>
+      </div>
+    </section>
+    <section data-panel="extensions" data-editor="skills" hidden>
+      <div class="extension-workbench"><div class="extension-toolbar"><h2>Blue Extensions</h2><button id="extensionRefresh" class="secondary">Refresh</button><button id="extensionInstallSample">Install Bundled Sample</button></div>
+        <div class="extension-grid"><aside><label>Extension source folder<input id="extensionSource" placeholder="Choose an unpacked extension folder"></label><label class="extension-approval"><input id="extensionApproval" type="checkbox"> Approve install, update, or uninstall</label><button id="extensionInstall">Install / Update</button><div class="pane-title">Installed</div><div id="extensionList" class="extension-list">No extensions installed.</div></aside>
+          <main><div id="extensionDetails" class="extension-details"><h3>Select an extension</h3><p class="hint">Manifests contribute commands, sidebar views, custom editors, languages, and settings.</p></div><div class="extension-actions"><button id="extensionEnable" class="secondary" disabled>Enable / Disable</button><button id="extensionActivate" class="secondary" disabled>Activate</button><button id="extensionDeactivate" class="secondary" disabled>Deactivate</button><button id="extensionUninstall" class="danger" disabled>Uninstall</button></div><div class="pane-title">Contributed commands</div><div class="extension-command"><select id="extensionCommandSelect"><option value="">No commands</option></select><input id="extensionCommandArgs" placeholder='JSON arguments, for example {"name":"Creator"}'><button id="extensionRunCommand" disabled>Run Command</button></div><div class="pane-title">Contribution preview</div><div id="extensionContributions" class="extension-contributions">Install an extension to populate this workbench.</div><pre id="extensionOutput">Extension host ready. External installs require explicit approval.</pre></main>
+        </div></div>
+    </section>
+    <section data-panel="workspace" data-editor="memory" hidden><h2>Blue Memory</h2><p class="hint">Pinned memories, project memories, preferences, and learned routines appear here.</p><pre>Memory stays local unless BlueMesh sync is explicitly approved.</pre></section>
+    <section data-panel="workspace" data-editor="workspace-settings" hidden>
+      <div class="editor-header compact"><div><p class="eyebrow">Workspace</p><h2>Workspace Settings</h2><p class="hint">Control Project Blue's local file index and recent-file history. Paths are workspace-relative; secrets and protected files remain blocked.</p></div></div>
+      <div class="settings-group">
+        <label for="workspaceIgnoredPaths">Ignored project paths (one per line)</label>
+        <textarea id="workspaceIgnoredPaths" rows="8" spellcheck="false" placeholder="node_modules&#10;.git&#10;Project Blue App/.blue"></textarea>
+        <label for="workspaceRecentLimit">Maximum recent files</label>
+        <input id="workspaceRecentLimit" type="number" min="1" max="100" value="24">
+        <div class="editor-toolbar-actions"><button id="workspaceSettingsSave">Save Workspace Settings</button><button id="workspaceSettingsReload" class="secondary">Reload</button></div>
+        <h3>Workspace roots</h3>
+        <div id="workspaceRootsList" class="settings-list">Loading registered roots...</div>
+        <div class="editor-toolbar-actions"><button id="workspaceRootAdd">Add Folder...</button><button id="workspaceSymbolsRefresh" class="secondary">Rebuild Symbol Index</button></div>
+        <pre id="workspaceSettingsStatus" aria-live="polite">Workspace settings have not been loaded.</pre>
+      </div>
+    </section>
+    <section data-panel="workspace" data-editor="blueprint-editor" hidden><h2>Blueprint Editor</h2><p class="hint">Blueprints for AI IDE features, animation systems, OBS scenes, and project plans open here as structured workbench documents.</p><textarea placeholder="Blueprint notes, requirements, diagrams, or generated implementation plans."></textarea></section>
+    <section data-panel="workspace" data-editor="asset-generator" hidden><h2>Asset Generator</h2><p class="hint">Image, model, Live2D, VRM, audio, and reference-aware generation jobs are organized here. Generation remains approval-gated and local/provider-backed.</p><pre>No generation job selected.</pre></section>
+    <section data-panel="workspace" data-editor="animation-generator" hidden><h2>Animation Generator</h2><p class="hint">Plan and generate breathing, blinking, walking, pointing, sitting, and streaming avatar animation passes without snapping.</p><pre>Animation requests and results will appear here.</pre></section>
+    <section data-panel="git" data-editor="diff-review" hidden><div class="editor-header compact"><div><p class="eyebrow">Compare</p><h2>Diff Review</h2><p class="hint">Saved content is shown on the left; current editor content is shown on the right.</p></div></div><div id="monacoDiffEditor" class="monaco-diff-host"></div><pre id="diffEditorFallback">No diff selected.</pre></section>
+    <section data-panel="run" data-editor="terminal-editor" hidden>
+      <div class="terminal-editor-shell">
+        <div class="terminal-toolbar"><select id="terminalProfile" aria-label="Terminal profile"></select><input id="terminalCwd" value="." placeholder="Workspace-relative working directory"><button id="terminalNew">New Terminal</button><button id="terminalSplit" class="secondary">Split</button><button id="terminalKill" class="secondary">Kill</button></div>
+        <div id="terminalTabs" class="terminal-tabs" role="tablist"></div>
+        <div id="terminalPanes" class="terminal-panes"><div class="terminal-pane active"><pre id="terminalOutput" tabindex="0">Create a terminal to begin.</pre><textarea id="terminalInput" rows="1" spellcheck="false" placeholder="Type a command, then press Enter"></textarea></div><div id="terminalSplitPane" class="terminal-pane" hidden><pre id="terminalSplitOutput" tabindex="0">Choose Split to create another terminal.</pre><textarea id="terminalSplitInput" rows="1" spellcheck="false" placeholder="Split terminal input"></textarea></div></div>
+        <div id="terminalStatus" class="terminal-status">No terminal session selected.</div>
+      </div>
+    </section>    <section data-panel="settings" data-editor="settings" hidden><h2>Settings</h2><p class="hint">Layout, startup, model, privacy, and path preferences live here.</p><div class="grid"><button id="settingsOpenProject">Open Blue Folder</button><button id="settingsRunAudit" class="secondary">Run Function Audit</button><button id="resetLayout" class="secondary">Reset Workbench Layout</button></div></section>
     </div>
   </main>
+  <aside id="auxiliaryBar" class="auxiliary-bar" aria-label="Blue Chat auxiliary panel">
+    <div class="auxiliary-tabs">
+      <button class="active" type="button" title="Blue Chat" data-open-activity="workspace" data-open-editor="workspace-home">Blue Chat</button>
+      <button id="auxClose" type="button" title="Close Blue Chat" aria-label="Close Blue Chat">×</button>
+    </div>
+    <div id="auxChatMount" class="aux-chat-mount"></div>
+  </aside>
   <section id="bottomPanel" class="bottom-panel" hidden>
-    <div class="bottom-tabs" role="tablist">
+    <div class="bottom-tabs" role="tablist"><button id="bottomCollapse" type="button" title="Collapse bottom panel">×</button>
       <button data-bottom-tab="output" class="active">Output</button>
       <button data-bottom-tab="problems">Problems</button>
       <button data-bottom-tab="activity">Activity Log</button>
       <button data-bottom-tab="security">Security Log</button>
       <button data-bottom-tab="mesh">BlueMesh Log</button>
       <button data-bottom-tab="streaming">Streaming Log</button>
+      <button data-bottom-tab="terminal">Terminal</button>
+      <button data-bottom-tab="tests">Tests</button>
     </div>
-    <div class="bottom-content"><pre id="bottomPanelOutput">Bottom panel is ready. It stays closed until a command opens it.</pre></div>
+    <div class="bottom-content">
+      <pre id="bottomPanelOutput" data-bottom-view="output" role="tabpanel">Bottom panel is ready. It stays closed until a command opens it.</pre>
+      <pre data-bottom-view="problems" role="tabpanel" hidden>No problems reported.</pre>
+      <pre data-bottom-view="activity" role="tabpanel" hidden>No activity recorded in this session.</pre>
+      <pre data-bottom-view="security" role="tabpanel" hidden>Security log has not been loaded.</pre>
+      <pre data-bottom-view="mesh" role="tabpanel" hidden>BlueMesh log has not been loaded.</pre>
+      <pre data-bottom-view="streaming" role="tabpanel" hidden>Streaming log has not been loaded.</pre>
+      <pre data-bottom-view="terminal" role="tabpanel" hidden>No terminal output yet.</pre>
+      <pre data-bottom-view="tests" role="tabpanel" hidden>No test output yet.</pre>
+    </div>
   </section>
   <footer class="workbench-status" aria-live="polite">
     <span id="footerConversation">Conversation: Blue Desktop Pet</span>
@@ -588,6 +837,7 @@
     <span id="footerVision">Vision: off</span>
   </footer>
   <script src="ui/shell/app-shell.js"></script>
+  <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
   <script src="control.js"></script>
 </body>
 </html>
