@@ -730,6 +730,72 @@
         <form id="taskForm" class="settings-group compact-form"><h3>Task definition</h3><input id="taskId" placeholder="task-id"><input id="taskLabel" placeholder="Task label"><select id="taskType"><option value="task">Task</option><option value="build">Build</option><option value="test">Test</option><option value="background">Background</option></select><select id="taskProfile"><option value="powershell">PowerShell</option><option value="cmd">Command Prompt</option><option value="git-bash">Git Bash</option><option value="python">Python</option></select><input id="taskCwd" value="." placeholder="Workspace-relative working directory"><textarea id="taskCommand" rows="4" placeholder="Command"></textarea><div class="editor-toolbar-actions"><button id="taskSave" type="submit">Save Task</button><button id="taskClear" type="button" class="secondary">Clear</button></div><pre id="taskStatus">Tasks are stored locally and never contain terminal secrets automatically.</pre></form>
       </div>
     </section>
+    <section data-panel="run" data-editor="background-agents" hidden>
+      <div class="agent-scheduler-workbench">
+        <header class="editor-header compact">
+          <div>
+            <p class="eyebrow">Project Blue V8</p>
+            <h2>Background Agents</h2>
+            <p class="hint">Schedule bounded, read-only workspace inspections. Agents never edit code automatically, and enabling or changing a schedule requires explicit approval.</p>
+          </div>
+          <div class="editor-toolbar-actions">
+            <button id="agentSchedulerRefresh" class="secondary">Refresh</button>
+            <button id="agentSchedulerRunDue" class="secondary">Run Due Now</button>
+          </div>
+        </header>
+        <div class="agent-scheduler-summary" aria-live="polite">
+          <span><strong id="agentSchedulerActiveCount">0</strong> enabled</span>
+          <span>Scheduler: <strong id="agentSchedulerState">checking</strong></span>
+          <span>Next run: <strong id="agentSchedulerNext">none</strong></span>
+          <span>Safety: <strong>read-only</strong></span>
+        </div>
+        <div class="agent-scheduler-notifications settings-group compact-form">
+          <div>
+            <strong>Windows finding alerts</strong>
+            <p class="hint">Optional and off by default. Blue only alerts when a report changes and reaches the selected severity.</p>
+          </div>
+          <label class="field-label">Minimum severity
+            <select id="agentSchedulerNotificationThreshold">
+              <option value="warning">Warning</option>
+              <option value="high" selected>High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+          <label class="approval-check"><input id="agentSchedulerNotificationApproval" type="checkbox"> I approve enabling or changing Windows alerts</label>
+          <div class="editor-toolbar-actions">
+            <button id="agentSchedulerNotificationsEnable">Enable alerts</button>
+            <button id="agentSchedulerNotificationsDisable" class="secondary">Disable alerts</button>
+          </div>
+          <span id="agentSchedulerNotificationState" class="hint" aria-live="polite">Alerts are off.</span>
+        </div>
+        <div class="agent-scheduler-layout">
+          <aside class="agent-scheduler-list-pane">
+            <div class="pane-title">Available agents</div>
+            <div id="agentSchedulerList" class="agent-scheduler-list" role="listbox" aria-label="Background agents">Loading agents...</div>
+          </aside>
+          <main class="agent-scheduler-editor-pane">
+            <div class="pane-title">Schedule</div>
+            <div id="agentSchedulerEmpty" class="agent-scheduler-empty">Select an agent to inspect or schedule it.</div>
+            <div id="agentSchedulerEditor" hidden>
+              <h3 id="agentSchedulerName">Agent</h3>
+              <p id="agentSchedulerDescription" class="hint"></p>
+              <label class="field-label">Run interval in minutes
+                <input id="agentSchedulerInterval" type="number" min="5" max="43200" step="1" value="60">
+              </label>
+              <label class="approval-check"><input id="agentSchedulerApproval" type="checkbox"> I approve enabling or changing this persistent schedule</label>
+              <div class="editor-toolbar-actions">
+                <button id="agentSchedulerEnable">Enable / Update</button>
+                <button id="agentSchedulerPause" class="secondary">Pause</button>
+                <button id="agentSchedulerRun" class="secondary">Run Now</button>
+              </div>
+              <pre id="agentSchedulerDetails" class="agent-scheduler-details">No agent selected.</pre>
+            </div>
+            <div class="pane-title">Recent runs</div>
+            <div id="agentSchedulerHistory" class="agent-scheduler-history">No scheduler history.</div>
+          </main>
+        </div>
+      </div>
+    </section>
     <section data-panel="run" data-editor="debugger" hidden>
       <div class="debugger-shell">
         <div class="debugger-toolbar">
@@ -804,7 +870,7 @@
     <div id="auxChatMount" class="aux-chat-mount"></div>
   </aside>
   <section id="bottomPanel" class="bottom-panel" hidden>
-    <div class="bottom-tabs" role="tablist"><button id="bottomCollapse" type="button" title="Collapse bottom panel">×</button>
+    <div class="bottom-tabs" role="tablist"><button id="bottomCollapse" type="button" title="Collapse bottom panel" aria-label="Collapse bottom panel">×</button>
       <button data-bottom-tab="output" class="active">Output</button>
       <button data-bottom-tab="problems">Problems</button>
       <button data-bottom-tab="activity">Activity Log</button>
@@ -836,6 +902,28 @@
     <span id="footerMicrophone">Microphone: off</span>
     <span id="footerVision">Vision: off</span>
   </footer>
+  <script src="ui/registry.js"></script>
+  <script src="ui/shared/button.js"></script>
+  <script src="ui/shared/icon-button.js"></script>
+  <script src="ui/shared/empty-state.js"></script>
+  <script src="ui/shared/status-item.js"></script>
+  <script src="ui/shared/text-field.js"></script>
+  <script src="ui/shared/select.js"></script>
+  <script src="ui/shared/checkbox.js"></script>
+  <script src="ui/shared/tabs.js"></script>
+  <script src="ui/shared/tree-view.js"></script>
+  <script src="ui/shared/modal.js"></script>
+  <script src="ui/shared/data-table.js"></script>
+  <script src="ui/shared/context-menu.js"></script>
+  <script src="ui/shell/resize-handle.js"></script>
+  <script src="ui/shell/activity-bar.js"></script>
+  <script src="ui/shell/editor-tabs.js"></script>
+  <script src="ui/shell/bottom-panel.js"></script>
+  <script src="ui/shell/status-bar.js"></script>
+  <script src="ui/shell/command-center.js"></script>
+  <script src="ui/shell/context-sidebar.js"></script>
+  <script src="ui/shell/editor-area.js"></script>
+  <script src="ui/shell/title-bar.js"></script>
   <script src="ui/shell/app-shell.js"></script>
   <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
   <script src="control.js"></script>

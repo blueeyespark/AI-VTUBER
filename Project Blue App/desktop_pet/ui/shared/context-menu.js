@@ -1,4 +1,11 @@
-// Project Blue UI component placeholder for ContextMenu.
-// Runtime wiring is centralized in shell/app-shell.js and control.js during the migration.
-window.ProjectBlueUI = window.ProjectBlueUI || {};
-window.ProjectBlueUI.ContextMenu = window.ProjectBlueUI.ContextMenu || { name: 'ContextMenu' };
+(() => {
+  const ui = window.ProjectBlueUI;
+  if (!ui) return;
+  ui.register("ContextMenu", {
+    mount(target, props = {}) {
+      const menu = ui.createElement("div", { className: "pb-context-menu", attributes: { role: "menu" } });
+      for (const item of props.items || []) menu.append(ui.createElement("button", { text: item.label, attributes: { type: "button", role: "menuitem", disabled: Boolean(item.disabled) }, events: { click: event => { item.onSelect?.(event); props.onClose?.(); } } }));
+      target.replaceChildren(menu); return menu;
+    }
+  });
+})();

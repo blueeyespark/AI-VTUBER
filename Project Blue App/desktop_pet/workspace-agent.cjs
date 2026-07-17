@@ -3,7 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const WORKSPACE_COMMANDS = new Set(["/workspace", "/files", "/search", "/symbols", "/git", "/diagnostics", "/plan", "/help"]);
+const WORKSPACE_COMMANDS = new Set(["/workspace", "/files", "/search", "/symbols", "/git", "/diagnostics", "/health", "/ide-status", "/consciousness", "/timeline", "/plan", "/help", "/brain", "/knowledge", "/impact", "/semantic-timeline", "/agents", "/agent-report", "/workspace-health", "/profile", "/performance"]);
 const BLOCKED_PATH = /(^|[\\/])(?:\.env(?:\.|$)|\.git|node_modules|\.blue)(?:[\\/]|$)/i;
 const hash = value => crypto.createHash("sha256").update(String(value), "utf8").digest("hex");
 const atomicJson = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); const temporary = `${file}.${process.pid}.tmp`; fs.writeFileSync(temporary, JSON.stringify(value, null, 2), "utf8"); fs.renameSync(temporary, file); };
@@ -102,6 +102,26 @@ class BlueWorkspaceAgentBridge {
       case "context": { if (!this.services.context) throw new Error("Workbench Context service is unavailable."); const data = await this.services.context.snapshot(action.uiContext); return { type: "workbenchContext", data: { snapshot: data, summary: this.services.context.summarize(data) } }; }
       case "activity": { if (!this.services.context) throw new Error("Workbench Context service is unavailable."); return { type: "workbenchActivity", data: this.services.context.activity(action.limit) }; }
       case "suggestions": { if (!this.services.proactive) throw new Error("Proactive Blue service is unavailable."); return { type: "workbenchSuggestions", data: this.services.proactive.suggestions(action.limit) }; }
+      case "consciousness": { if (!this.services.projectConsciousness) throw new Error("Project Consciousness service is unavailable."); const data = this.services.projectConsciousness.snapshot(); return { type: "projectConsciousness", data: { snapshot: data, summary: this.services.projectConsciousness.summary(data) } }; }
+      case "timeline": { if (!this.services.projectConsciousness) throw new Error("Project Consciousness service is unavailable."); return { type: "projectTimeline", data: this.services.projectConsciousness.timeline(action.limit) }; }
+      case "ideStatus": { if (!this.services.ideReadiness) throw new Error("IDE Readiness service is unavailable."); const data = this.services.ideReadiness.snapshot(); return { type: "ideReadiness", data: { snapshot: data, summary: this.services.ideReadiness.summary(data) } }; }
+      case "health": { if (!this.services.health) throw new Error("Workbench Health service is unavailable."); const data = this.services.health.snapshot(); return { type: "workbenchHealth", data: { snapshot: data, summary: this.services.health.summary(data) } }; }
+      case "brain": { if (!this.services.brain) throw new Error("Blue Brain service is unavailable."); return { type: "blueBrain", data: this.services.brain.snapshot() }; }
+      case "knowledge": { if (!this.services.knowledge) throw new Error("Knowledge Graph service is unavailable."); return { type: "knowledgeGraph", data: action.rebuild === true ? this.services.knowledge.rebuild() : this.services.knowledge.graph() }; }
+      case "impact": { if (!this.services.knowledge) throw new Error("Knowledge Graph service is unavailable."); return { type: "impactAnalysis", data: this.services.knowledge.impact(String(action.id || "")) }; }
+      case "semanticTimeline": { if (!this.services.semanticTimeline) throw new Error("Semantic Timeline service is unavailable."); return { type: "semanticTimeline", data: this.services.semanticTimeline.search(action.query || "", action.limit || 50) }; }
+      case "backgroundAgents": { if (!this.services.backgroundAgents) throw new Error("Background Agent service is unavailable."); return { type: "backgroundAgents", data: this.services.backgroundAgents.catalog() }; }
+      case "backgroundAgentRun": {
+        if (this.services.backgroundAgentScheduler) return { type: "backgroundAgentReport", data: this.services.backgroundAgentScheduler.runNow(String(action.id || ""), "chat").report };
+        if (!this.services.backgroundAgents) throw new Error("Background Agent service is unavailable.");
+        return { type: "backgroundAgentReport", data: this.services.backgroundAgents.run(String(action.id || "")) };
+      }
+      case "backgroundAgentScheduler": { if (!this.services.backgroundAgentScheduler) throw new Error("Background Agent Scheduler is unavailable."); return { type: "backgroundAgentScheduler", data: this.services.backgroundAgentScheduler.status() }; }
+      case "backgroundAgentSchedule": { if (!this.services.backgroundAgentScheduler) throw new Error("Background Agent Scheduler is unavailable."); return { type: "backgroundAgentSchedule", data: this.services.backgroundAgentScheduler.configure(String(action.id || ""), { enabled: true, intervalMinutes: action.intervalMinutes }, action.approved === true) }; }
+      case "backgroundAgentPause": { if (!this.services.backgroundAgentScheduler) throw new Error("Background Agent Scheduler is unavailable."); return { type: "backgroundAgentSchedule", data: this.services.backgroundAgentScheduler.pause(String(action.id || "")) }; }
+      case "backgroundAgentHistory": { if (!this.services.backgroundAgentScheduler) throw new Error("Background Agent Scheduler is unavailable."); return { type: "backgroundAgentHistory", data: this.services.backgroundAgentScheduler.history({ id: action.id, limit: action.limit }) }; }
+      case "workspaceHealthScore": { if (!this.services.workspaceHealthScore) throw new Error("Workspace Health Score service is unavailable."); return { type: "workspaceHealthScore", data: this.services.workspaceHealthScore.snapshot() }; }
+      case "runtimeProfile": { if (!this.services.runtimeProfiler) throw new Error("Runtime Profiler service is unavailable."); return { type: "runtimeProfile", data: action.mode === "history" ? this.services.runtimeProfiler.history(action.limit) : this.services.runtimeProfiler.report({ label: action.label }) }; }
       case "observe": { if (!this.services.proactive) throw new Error("Proactive Blue service is unavailable."); return { type: "workbenchObservation", data: await this.services.proactive.observe(action.eventType, action.details, action.uiContext) }; }
       default: throw new Error("Unknown Workspace Agent action.");
     }
@@ -145,8 +165,27 @@ class BlueWorkspaceAgentBridge {
   async handleMessage(message) {
     const text = String(message || "").trim();
     const lowered = text.toLowerCase();
+    const [direct, ...directArgs] = text.split(/\s+/); const directValue = directArgs.join(" ");
+    if (direct === "/agent-schedule") {
+      const [id, minutes, approval] = directArgs;
+      return this.execute({ type: "backgroundAgentSchedule", id, intervalMinutes: Number(minutes), approved: approval === "APPROVE" });
+    }
+    if (direct === "/agent-pause") return this.execute({ type: "backgroundAgentPause", id: directArgs[0] });
+    if (direct === "/agent-history") return this.execute({ type: "backgroundAgentHistory", id: directArgs[0], limit: Number(directArgs[1]) || 50 });
+    const v8Commands = { "/brain": "brain", "/knowledge": "knowledge", "/impact": "impact", "/semantic-timeline": "semanticTimeline", "/agents": "backgroundAgents", "/agent-report": "backgroundAgentRun", "/agent-scheduler": "backgroundAgentScheduler", "/workspace-health": "workspaceHealthScore", "/profile": "runtimeProfile", "/performance": "runtimeProfile" };
+    if (v8Commands[direct]) return this.execute({ type: v8Commands[direct], id: directValue, query: directValue, rebuild: directValue === "rebuild" });
     if (/\b(summarize|show|inspect|what(?:'s| is))\b.*\b(workbench|ide context|current work)\b/.test(lowered) || /\bwhat am i working on\b/.test(lowered)) return this.execute({ type: "context" });
     if (/\b(what should i do next|next suggestion|suggestions?)\b/.test(lowered)) return this.execute({ type: "suggestions" });
+    if (/\b(project consciousness|architecture map|dependency graph)\b/.test(lowered)) return this.execute({ type: "consciousness" });
+    if (/\b(project timeline|semantic history|recent project history)\b/.test(lowered)) return this.execute({ type: "timeline" });
+    if (/\b(ide status|ide readiness|vscode parity|vs code parity|how close.*ide)\b/.test(lowered)) return this.execute({ type: "ideStatus" });
+    if (/\b(health check|workbench health|check blue|is blue healthy)\b/.test(lowered)) return this.execute({ type: "health" });
+    if (/\b(blue brain|long.?term memory|brain status)\b/.test(lowered)) return this.execute({ type: "brain" });
+    if (/\b(knowledge graph|project graph)\b/.test(lowered)) return this.execute({ type: "knowledge" });
+    if (/\b(background agents?|agent catalog)\b/.test(lowered)) return this.execute({ type: "backgroundAgents" });
+    if (/\b(background agent schedule|scheduled agents?|agent scheduler)\b/.test(lowered)) return this.execute({ type: "backgroundAgentScheduler" });
+    if (/\b(workspace health score|project health score)\b/.test(lowered)) return this.execute({ type: "workspaceHealthScore" });
+    if (/\b(runtime performance|performance profile|profile blue|memory pressure|event loop)\b/.test(lowered)) return this.execute({ type: "runtimeProfile" });
     const blueResult = await this.services.blue?.handleMessage(text);
     if (blueResult) return blueResult;
     if (text.startsWith("/agent ")) {
@@ -157,7 +196,22 @@ class BlueWorkspaceAgentBridge {
       if (verb === "tests") return this.execute({ type: "tests", file: rest || undefined });
       if (verb === "failures") return this.execute({ type: "failures" });
       if (verb === "search" || verb === "symbols") return this.execute({ type: verb, query: rest });
-      if (verb === "diagnostics" || verb === "tasks") return this.execute({ type: verb });
+      if (verb === "ide-status") return this.execute({ type: "ideStatus" });
+      if (verb === "consciousness") return this.execute({ type: "consciousness" });
+      if (verb === "timeline") return this.execute({ type: "timeline", limit: Number(rest) || 50 });
+      if (verb === "brain") return this.execute({ type: "brain" });
+      if (verb === "knowledge") return this.execute({ type: "knowledge", rebuild: rest === "rebuild" });
+      if (verb === "impact") return this.execute({ type: "impact", id: rest });
+      if (verb === "semantic-timeline") return this.execute({ type: "semanticTimeline", query: rest });
+      if (verb === "agents") return this.execute({ type: "backgroundAgents" });
+      if (verb === "agent-report") return this.execute({ type: "backgroundAgentRun", id: rest });
+      if (verb === "agent-scheduler") return this.execute({ type: "backgroundAgentScheduler" });
+      if (verb === "agent-schedule") { const [id, minutes, approval] = rest.split(/\s+/); return this.execute({ type: "backgroundAgentSchedule", id, intervalMinutes: Number(minutes), approved: approval === "APPROVE" }); }
+      if (verb === "agent-pause") return this.execute({ type: "backgroundAgentPause", id: rest });
+      if (verb === "agent-history") { const [id, limit] = rest.split(/\s+/); return this.execute({ type: "backgroundAgentHistory", id, limit: Number(limit) || 50 }); }
+      if (verb === "workspace-health") return this.execute({ type: "workspaceHealthScore" });
+      if (verb === "profile" || verb === "performance") return this.execute({ type: "runtimeProfile", mode: rest === "history" ? "history" : "report" });
+      if (verb === "diagnostics" || verb === "tasks" || verb === "health") return this.execute({ type: verb });
       if (verb === "context" || verb === "activity" || verb === "suggestions") return this.execute({ type: verb });
       if (verb === "stashes") return this.execute({ type: "gitStashes" });
       if (verb === "blame") return this.execute({ type: "gitBlame", path: rest });
@@ -179,6 +233,8 @@ class BlueWorkspaceAgentBridge {
 
 function formatWorkspaceAgentResult(result) {
   if (!result) return "";
+  if (result.type === "projectConsciousness") return result.data?.summary || "";
+  if (result.type === "projectTimeline") return ["Project timeline:", ...((result.data || []).slice(0, 30).map(item => item.error ? `- ${item.error}` : `- ${item.date}: ${item.subject} (${item.author})`))].join("\n");
   if (result.type === "error") return `Workspace agent error: ${result.data?.message || "unknown error"}`;
   if (result.type === "workspace") {
     const data = result.data || {};
@@ -235,6 +291,22 @@ function formatWorkspaceAgentResult(result) {
     return require("./blue-feature-service.cjs").formatBlueFeatureResult(result);
   }
   if (result.type === "workbenchContext") return result.data?.summary || "Workbench context is unavailable.";
+  if (result.type === "ideReadiness") return result.data?.summary || "IDE readiness is unavailable.";
+  if (result.type === "workbenchHealth") return result.data?.summary || "Workbench health is unavailable.";
+  if (result.type === "blueBrain") return `Blue Brain: ${result.data?.records || 0} memory records, ${(result.data?.goals || []).length} persistent goals, and ${result.data?.relationships || 0} relationships.`;
+  if (result.type === "knowledgeGraph") return `Knowledge Graph: ${(result.data?.nodes || []).length} nodes and ${(result.data?.edges || []).length} relationships. Generated ${result.data?.generatedAt || "now"}.`;
+  if (result.type === "impactAnalysis") return [`Impact analysis: ${result.data?.action || "unknown"}`, `Risk: ${result.data?.risk || "unknown"}`, result.data?.why || "", ...((result.data?.files || []).slice(0, 20).map(file => `- ${file}`))].filter(Boolean).join("\n");
+  if (result.type === "semanticTimeline") return ["Semantic timeline:", ...((result.data || []).map(item => `- ${item.timestamp}: ${item.title} (${item.type})`))].join("\n");
+  if (result.type === "backgroundAgents") return ["Read-only background agents:", ...((result.data || []).map(item => `- ${item.id}: ${item.description}`))].join("\n");
+  if (result.type === "backgroundAgentReport") return [`${result.data?.agent?.name || "Agent"} report:`, ...((result.data?.findings || []).map(item => `- [${item.severity}] ${item.message}`)), `Read-only: ${result.data?.readOnly !== false}`].join("\n");
+  if (result.type === "backgroundAgentScheduler") return ["Background Agent Scheduler:", `- Scheduler active: ${result.data?.schedulerActive === true}`, `- Enabled schedules: ${result.data?.enabledCount || 0}`, `- Next run: ${result.data?.nextRunAt || "none"}`, "- Agents remain read-only; enabling a schedule requires explicit approval.", ...((result.data?.schedules || []).filter(item => item.enabled).map(item => `- ${item.agentId}: every ${Math.round(item.intervalMs / 60000)} minute(s), next ${item.nextRunAt}`))].join("\n");
+  if (result.type === "backgroundAgentSchedule") return `Background agent ${result.data?.id || "schedule"}: ${result.data?.enabled ? `enabled every ${Math.round(result.data.intervalMs / 60000)} minute(s); next ${result.data.nextRunAt}` : "paused"}.`;
+  if (result.type === "backgroundAgentHistory") return ["Background agent history:", ...((result.data || []).map(item => `- ${item.completedAt}: ${item.agentId} (${item.trigger}) ${item.ok ? `${item.findingCount} finding(s)${item.changedSincePrevious ? ", changed" : ", unchanged"}` : `failed: ${item.error}`}`))].join("\n");
+  if (result.type === "workspaceHealthScore") return [`Workspace health: ${result.data?.overall || 0}/100`, ...Object.entries(result.data?.categories || {}).map(([name, value]) => `- ${name}: ${value}`)].join("\n");
+  if (result.type === "runtimeProfile") {
+    if (Array.isArray(result.data)) return ["Runtime profile history:", ...result.data.map(item => `- ${item.timestamp}: RSS ${item.process?.rssMb || 0} MiB, CPU ${item.process?.cpuPercentOfOneCore || 0}%, event loop ${item.process?.eventLoopUtilization || 0}`)].join("\n");
+    const current = result.data?.current || {}; return ["Runtime performance:", `- CPU: ${current.process?.cpuPercentOfOneCore || 0}% of one core`, `- RSS: ${current.process?.rssMb || 0} MiB`, `- Heap: ${current.process?.heapUsedMb || 0}/${current.process?.heapTotalMb || 0} MiB`, `- Event loop utilization: ${current.process?.eventLoopUtilization || 0}`, `- System memory: ${current.system?.memoryUsedPercent || 0}%`, ...((result.data?.findings || []).map(item => `- [${item.severity}] ${item.message} ${item.recommendation}`))].join("\n");
+  }
   if (result.type === "workbenchSuggestions") {
     const rows = result.data || [];
     return ["Blue's next suggestions:", ...(rows.length ? rows.map(item => `- [${item.priority}] ${item.title}: ${item.message}`) : ["- No urgent suggestions. The workbench is ready."])].join("\n");

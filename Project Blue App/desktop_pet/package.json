@@ -5,22 +5,28 @@
     "main": "main.cjs",
     "scripts": {
         "start": "electron .",
-        "check": "node --check main.cjs && node --check preload.cjs && node --check control.js && node --check control-audit.cjs && node --check pet-renderer.js && node --check motion-core.mjs && node --check locomotion-core.cjs && node --check presence-core.cjs && node --check runtime-guards.cjs && node --check process-runner.cjs && node --check terminal-service.cjs && node --check git-service.cjs && node --check language-service.cjs && node --check debug-service.cjs && node --check node-debug-adapter.cjs && node --check test-service.cjs && node --check extension-host.cjs && node --check extension-service.cjs && node --check blue-feature-service.cjs && node --check workbench-context-service.cjs && node --check proactive-blue-service.cjs && node --check discord-addon.cjs && node --check streaming-core.cjs && node --check companion_engine/geometry.cjs && node --check companion_engine/emotion-state.cjs && node --check companion_engine/animation-state-machine.cjs && node --check companion_engine/procedural-life-controller.cjs && node --check companion_engine/movement-controller.cjs && node --check companion_engine/safety-controller.cjs && node --check companion_engine/habit-memory.cjs && node --check companion_engine/behavior-planner.cjs && node --check companion_engine/model-profile.cjs && node --check companion_engine/debug-inspector.cjs && node --check companion_engine/desktop-companion-engine.cjs && node --check workspace-agent.cjs && node --check editor-service.cjs",
+        "check": "node --check main.cjs && node --check preload.cjs && node --check control.js && node --check control-audit.cjs && node --check pet-renderer.js && node --check motion-core.mjs && node --check locomotion-core.cjs && node --check presence-core.cjs && node --check runtime-guards.cjs && node --check process-runner.cjs && node --check terminal-service.cjs && node --check git-service.cjs && node --check language-service.cjs && node --check debug-service.cjs && node --check node-debug-adapter.cjs && node --check test-service.cjs && node --check extension-host.cjs && node --check extension-service.cjs && node --check blue-feature-service.cjs && node --check workbench-context-service.cjs && node --check proactive-blue-service.cjs && node --check workbench-health-service.cjs && node --check ide-readiness-service.cjs && node --check project-consciousness-service.cjs && node --check project-paths.cjs && node --check discord-addon.cjs && node --check streaming-core.cjs && node --check companion_engine/geometry.cjs && node --check companion_engine/emotion-state.cjs && node --check companion_engine/animation-state-machine.cjs && node --check companion_engine/procedural-life-controller.cjs && node --check companion_engine/movement-controller.cjs && node --check companion_engine/safety-controller.cjs && node --check companion_engine/habit-memory.cjs && node --check companion_engine/behavior-planner.cjs && node --check companion_engine/model-profile.cjs && node --check companion_engine/debug-inspector.cjs && node --check companion_engine/desktop-companion-engine.cjs && node --check workspace-agent.cjs && node --check editor-service.cjs && node --check ui/registry.js && node --check ui/shared/button.js && node --check ui/shared/icon-button.js && node --check ui/shared/empty-state.js && node --check ui/shared/status-item.js && node --check ui/shared/text-field.js && node --check ui/shared/select.js && node --check ui/shared/checkbox.js && node --check ui/shared/tabs.js && node --check ui/shared/tree-view.js && node --check ui/shared/modal.js && node --check ui/shared/data-table.js && node --check ui/shared/context-menu.js && node --check ui/shell/resize-handle.js && node --check ui/shell/activity-bar.js && node --check ui/shell/editor-tabs.js && node --check ui/shell/bottom-panel.js && node --check ui/shell/status-bar.js && node --check ui/shell/command-center.js && node --check ui/shell/context-sidebar.js && node --check ui/shell/editor-area.js && node --check ui/shell/title-bar.js",
+    "check:v8": "node --check explainability-service.cjs && node --check blue-brain-service.cjs && node --check knowledge-graph-service.cjs && node --check semantic-timeline-service.cjs && node --check background-agent-service.cjs && node --check background-agent-scheduler-service.cjs && node --check workspace-health-score-service.cjs && node --check runtime-profiler-service.cjs",
         "test": "node --test --test-concurrency=1 test/*.test.cjs",
-        "test:terminal": "node test/terminal-native-smoke.cjs"
+        "test:terminal": "node test/terminal-native-smoke.cjs",
+        "test:paths": "node --test --test-concurrency=1 test/project-paths.test.cjs",
+        "verify": "npm run check && npm run check:v8 && npm test"
     },
     "dependencies": {
-        "@pixiv/three-vrm": "latest",
+        "@pixiv/three-vrm": "3.5.4",
         "monaco-editor": "^0.52.2",
         "node-pty": "^1.1.0",
         "pixi-live2d-display": "^0.4.0",
         "pixi.js": "^6.5.10",
         "pyright": "1.1.411",
-        "three": "latest",
+        "three": "0.185.1",
         "typescript": "5.9.3",
         "typescript-language-server": "5.3.0"
     },
     "devDependencies": {
-        "electron": "latest"
+        "electron": "43.0.0"
+    },
+    "overrides": {
+        "gh-pages": "6.3.0"
     }
 }

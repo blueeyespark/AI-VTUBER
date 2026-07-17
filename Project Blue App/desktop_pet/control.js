@@ -540,7 +540,7 @@ function renderEditorTabs() {
       const close = document.createElement("span");
       close.className = "editor-close";
       close.setAttribute("aria-hidden", "true");
-      close.textContent = "x";
+      close.textContent = "×";
       button.append(close);
     }
     button.onclick = event => {
@@ -551,6 +551,21 @@ function renderEditorTabs() {
       }
     };
     button.onauxclick = event => { if (event.button === 1) closeEditor(editor.id); };
+    button.onkeydown = event => {
+      if (event.key === "Delete" && editor.closable) {
+        event.preventDefault();
+        closeEditor(editor.id);
+        return;
+      }
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const tabs = [...editorTabs.querySelectorAll(".editor-tab")];
+      const index = tabs.indexOf(button);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      tabs[next]?.focus();
+      selectTab(layoutState.activeActivity, tabs[next]?.dataset.editor);
+    };
     button.ondblclick = () => pinFileEditor(editor.id);
     button.oncontextmenu = event => {
       event.preventDefault();
@@ -687,6 +702,7 @@ function selectTab(value, editorValue) {
   if (isFileEditor(editor)) applyFileEditorSession(fileEditorSessions.get(editor));
   else activeFileEditorSession = null;
   if (activity === "workspace" && editor === "workspace-settings") loadWorkspaceSettings();
+  if (activity === "run" && editor === "background-agents") queueMicrotask(() => refreshAgentScheduler().catch(error => setAgentSchedulerOutput(error.message || String(error))));
   renderShell();
   updateBlueContext();
   updateAliveDashboard?.();
@@ -1230,6 +1246,45 @@ function renderWorkspaceSearchResults(result, replacementPreview = false) {
 }
 function openSidebarItem(label) {
   const text = String(label || "").toLowerCase();
+  const activityRoutes = {
+    workspace: {
+      "vrms": "asset-generator", animations: "animation-generator", images: "asset-generator",
+      audio: "asset-generator", "generated content": "generated-result", memory: "memory",
+      logs: "workspace-home", "favorites": "workspace-home"
+    },
+    ai: {
+      voice: "voice", microphone: "voice", vision: "presence", avatar: "avatar",
+      movement: "movement", "local ai": "local-ai", privacy: "presence", "presence rules": "presence"
+    },
+    diagnostics: {
+      diagnostics: "diagnostics", "pc info": "pc-actions", "function audit": "function-health",
+      "blue doctor": "blue-doctor", "developer tools": "developer-tools", security: "security",
+      hardware: "pc-actions", recovery: "blue-doctor", logs: "diagnostics"
+    },
+    run: {
+      "active tasks": "tasks", "saved tasks": "tasks", "background agents": "background-agents", tests: "tests", build: "tasks", launch: "debugger",
+      "debug sessions": "debugger", breakpoints: "debugger", watch: "debugger", processes: "debugger", terminal: "terminal-editor"
+    },
+    discord: {
+      connection: "connection", commands: "commands", "allowed server": "connection",
+      "allowed channel": "connection", "allowed users": "connection", logs: "discord-logs"
+    },
+    mesh: {
+      identity: "identity", nodes: "nodes", pairing: "sync", sync: "sync", conflicts: "conflicts",
+      ledger: "ledger", trust: "identity", logs: "ledger"
+    },
+    settings: { layout: "settings", model: "settings", privacy: "settings", startup: "settings", paths: "settings" },
+    extensions: {
+      "installed skills": "skills", "available add-ons": "skills", "safe integrations": "skills", "capability packs": "skills"
+    }
+  };
+  if (layoutState.activeActivity === "workspace" && text === "logs") showBottomPanel("activity");
+  const directEditor = activityRoutes[layoutState.activeActivity]?.[text];
+  if (directEditor) return selectTab(layoutState.activeActivity, directEditor);
+  if (layoutState.activeActivity === "git") {
+    selectTab("git", text === "diff review" || text === "conflicts" ? "diff-review" : "source-control");
+    return loadGitState();
+  }
   if (layoutState.activeActivity === "streaming") {
     const streamingEditors = {
       "obs": "obs",
@@ -3866,3 +3921,117 @@ document.querySelector("#extensionUninstall")?.addEventListener("click", async (
 document.querySelector("#extensionCommandSelect")?.addEventListener("change", event => { document.querySelector("#extensionRunCommand").disabled = !event.target.value; });
 document.querySelector("#extensionRunCommand")?.addEventListener("click", async () => { try { const raw = document.querySelector("#extensionCommandArgs").value.trim(); extensionOutput(await window.bluePet.extensionCommand({ command: document.querySelector("#extensionCommandSelect").value, args: raw ? JSON.parse(raw) : {} })); await refreshExtensions(); } catch (error) { extensionOutput(error.message); } });
 window.bluePet.onExtensionEvent?.(event => extensionOutput(event));
+
+// Project Blue V8: approval-gated, read-only background-agent scheduler workbench.
+let agentSchedulerCatalog = [];
+let selectedScheduledAgentId = null;
+
+function schedulerElement(id) { return document.querySelector(`#${id}`); }
+function schedulerDate(value) {
+  if (!value) return "none";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "none" : parsed.toLocaleString();
+}
+function setAgentSchedulerOutput(value) {
+  const output = schedulerElement("agentSchedulerDetails");
+  if (output) output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+function renderAgentSchedulerHistory(history = []) {
+  const root = schedulerElement("agentSchedulerHistory");
+  if (!root) return;
+  root.replaceChildren();
+  for (const run of history.slice(0, 50)) {
+    const row = document.createElement("div");
+    row.className = `agent-scheduler-history-row ${run.ok ? "ok" : "failed"}`;
+    const status = run.ok ? `${run.findingCount || 0} findings` : (run.error || "failed");
+    const changed = run.ok ? (run.changedSincePrevious ? "changed" : "unchanged") : "error";
+    row.innerHTML = `<span class="agent-run-state" aria-hidden="true"></span><strong>${escapeHtml(run.agentId || "agent")}</strong><span>${escapeHtml(run.trigger || "manual")}</span><span>${escapeHtml(status)}</span><span>${escapeHtml(changed)}</span><time>${escapeHtml(schedulerDate(run.completedAt))}</time>`;
+    row.onclick = () => setAgentSchedulerOutput(run);
+    root.append(row);
+  }
+  if (!history.length) root.textContent = "No scheduler history.";
+}
+function renderAgentScheduler(status, catalog, history) {
+  agentSchedulerCatalog = Array.isArray(catalog) ? catalog : [];
+  schedulerElement("agentSchedulerActiveCount").textContent = String(status?.enabledCount || 0);
+  schedulerElement("agentSchedulerState").textContent = status?.schedulerActive ? "running" : "stopped";
+  schedulerElement("agentSchedulerNext").textContent = schedulerDate(status?.nextRunAt);
+  const notificationSettings = status?.notifications || { enabled: false, threshold: "high" };
+  schedulerElement("agentSchedulerNotificationThreshold").value = notificationSettings.threshold || "high";
+  schedulerElement("agentSchedulerNotificationState").textContent = notificationSettings.enabled
+    ? `Alerts are on for changed ${notificationSettings.threshold}-or-higher findings.`
+    : "Alerts are off.";
+  schedulerElement("agentSchedulerNotificationsDisable").disabled = !notificationSettings.enabled;
+  const list = schedulerElement("agentSchedulerList");
+  list.replaceChildren();
+  if (!agentSchedulerCatalog.some(item => item.id === selectedScheduledAgentId)) selectedScheduledAgentId = agentSchedulerCatalog[0]?.id || null;
+  for (const agent of agentSchedulerCatalog) {
+    const schedule = agent.schedule || {};
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `agent-scheduler-row${agent.id === selectedScheduledAgentId ? " selected" : ""}`;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(agent.id === selectedScheduledAgentId));
+    row.innerHTML = `<span class="agent-schedule-state ${schedule.enabled ? "enabled" : "paused"}" aria-hidden="true"></span><span><strong>${escapeHtml(agent.name || agent.id)}</strong><small>${schedule.enabled ? `Every ${Math.round(schedule.intervalMs / 60000)} min` : "Paused"}</small></span>`;
+    row.onclick = async () => {
+      selectedScheduledAgentId = agent.id;
+      await refreshAgentScheduler();
+    };
+    list.append(row);
+  }
+  if (!agentSchedulerCatalog.length) list.textContent = "No background agents are registered.";
+  const selected = agentSchedulerCatalog.find(item => item.id === selectedScheduledAgentId);
+  schedulerElement("agentSchedulerEmpty").hidden = Boolean(selected);
+  schedulerElement("agentSchedulerEditor").hidden = !selected;
+  if (selected) {
+    const schedule = selected.schedule || {};
+    schedulerElement("agentSchedulerName").textContent = selected.name || selected.id;
+    schedulerElement("agentSchedulerDescription").textContent = selected.description || selected.purpose || "Read-only workspace inspection.";
+    schedulerElement("agentSchedulerInterval").value = String(Math.max(5, Math.round((schedule.intervalMs || 3600000) / 60000)));
+    schedulerElement("agentSchedulerPause").disabled = !schedule.enabled;
+    setAgentSchedulerOutput({
+      agentId: selected.id,
+      state: schedule.enabled ? "enabled" : "paused",
+      lastRun: schedulerDate(schedule.lastRunAt),
+      nextRun: schedulerDate(schedule.nextRunAt),
+      lastResult: schedule.lastResult || "not run"
+    });
+  }
+  renderAgentSchedulerHistory(history);
+}
+async function refreshAgentScheduler() {
+  if (!window.bluePet?.v8AgentScheduler) throw new Error("Background-agent scheduler bridge is unavailable.");
+  const [status, catalog, history] = await Promise.all([
+    window.bluePet.v8AgentScheduler({ action: "status" }),
+    window.bluePet.v8AgentScheduler({ action: "catalog" }),
+    window.bluePet.v8AgentScheduler({ action: "history", id: selectedScheduledAgentId, limit: 50 })
+  ]);
+  renderAgentScheduler(status, catalog, history);
+  return status;
+}
+async function runAgentSchedulerAction(action, values = {}) {
+  if (!selectedScheduledAgentId && !["runDue", "notifications"].includes(action)) throw new Error("Select a background agent first.");
+  const result = await window.bluePet.v8AgentScheduler({ action, id: selectedScheduledAgentId, ...values });
+  if (schedulerElement("agentSchedulerApproval")) schedulerElement("agentSchedulerApproval").checked = false;
+  if (schedulerElement("agentSchedulerNotificationApproval")) schedulerElement("agentSchedulerNotificationApproval").checked = false;
+  await refreshAgentScheduler();
+  setAgentSchedulerOutput(result);
+  return result;
+}
+document.querySelector("#agentSchedulerRefresh")?.addEventListener("click", () => refreshAgentScheduler().catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerRunDue")?.addEventListener("click", () => runAgentSchedulerAction("runDue").catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerEnable")?.addEventListener("click", () => runAgentSchedulerAction("configure", {
+  enabled: true,
+  intervalMinutes: Number(schedulerElement("agentSchedulerInterval")?.value || 60),
+  approved: Boolean(schedulerElement("agentSchedulerApproval")?.checked)
+}).catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerPause")?.addEventListener("click", () => runAgentSchedulerAction("pause").catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerRun")?.addEventListener("click", () => runAgentSchedulerAction("run").catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerNotificationsEnable")?.addEventListener("click", () => runAgentSchedulerAction("notifications", {
+  enabled: true,
+  threshold: schedulerElement("agentSchedulerNotificationThreshold")?.value || "high",
+  approved: Boolean(schedulerElement("agentSchedulerNotificationApproval")?.checked)
+}).catch(error => setAgentSchedulerOutput(error.message)));
+document.querySelector("#agentSchedulerNotificationsDisable")?.addEventListener("click", () => runAgentSchedulerAction("notifications", {
+  enabled: false
+}).catch(error => setAgentSchedulerOutput(error.message)));

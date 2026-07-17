@@ -1,4 +1,12 @@
-// Project Blue UI component placeholder for Checkbox.
-// Runtime wiring is centralized in shell/app-shell.js and control.js during the migration.
-window.ProjectBlueUI = window.ProjectBlueUI || {};
-window.ProjectBlueUI.Checkbox = window.ProjectBlueUI.Checkbox || { name: 'Checkbox' };
+(() => {
+  const ui = window.ProjectBlueUI;
+  if (!ui) return;
+  ui.register("Checkbox", {
+    mount(target, props = {}) {
+      const input = ui.createElement("input", { attributes: { type: "checkbox", checked: Boolean(props.checked) }, events: { change: event => props.onChange?.(event.target.checked, event) } });
+      const root = ui.createElement("label", { className: "pb-checkbox", children: [input, ui.createElement("span", { text: props.label || "Option" })] });
+      target.replaceChildren(root);
+      return root;
+    }
+  });
+})();

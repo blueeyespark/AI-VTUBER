@@ -292,8 +292,22 @@ test("compact workbench releases the auxiliary column and opens chat as an overl
   assert.match(renderer, /compact\s*\?\s*["']0px["']\s*:\s*`\$\{layoutState\.auxWidth\}px`/);
   assert.match(renderer, /aux-overlay-open/);
   assert.match(renderer, /addEventListener\(["']resize["'],\s*syncResponsiveWorkbench\)/);
-  assert.match(css, /@media\s*\(max-width:\s*1400px\)[\s\S]*grid-template-columns:\s*48px\s+var\(--sidebar-width\)\s+minmax\(0,\s*1fr\)\s+0px/);
-  assert.match(css, /aux-compact\.aux-overlay-open:not\(\.aux-collapsed\)\s+\.auxiliary-bar/);
+  assert.match(css, /@media\s*\(max-width:\s*1400px\)[\s\S]*grid-template-columns:\s*48px\s+minmax\(180px,\s*var\(--sidebar-width\)\)\s+minmax\(0,\s*1fr\)/);
+  assert.doesNotMatch(css, /grid-template-columns:\s*48px\s+var\(--sidebar-width\)\s+minmax\(0,\s*1fr\)\s+0px/, "compact mode must not retain the legacy zero-width auxiliary track");
+  assert.match(css, /aux-overlay-open:not\(\.aux-collapsed\)\s+\.auxiliary-bar/);
+  assert.match(css, /@media\s*\(max-width:\s*1400px\)[\s\S]*header,[\s\S]*\.workbench-status\s*\{\s*grid-column:\s*1\s*\/\s*-1/, "compact header and status must not create implicit columns");
   assert.match(main, /BLUE_CONTROL_SMOKE_WIDTH/);
   assert.match(main, /BLUE_CONTROL_SMOKE_HEIGHT/);
+});
+
+test("control shell has keyboard-operable tabs and complete sidebar routes", () => {
+  const html = read("index.html");
+  const renderer = read("control.js");
+  assert.doesNotMatch(html, /\u00c3.|\u00e2.|\ufffd/, "control shell contains mojibake");
+  assert.match(html, /id=["']auxClose["'][^>]*aria-label=["']Close Blue Chat["']/);
+  assert.match(renderer, /event\.key\s*===\s*["']Delete["'][\s\S]*editor\.closable/, "closable editor tabs must support the Delete key");
+  assert.match(renderer, /["']ArrowLeft["'][\s\S]*["']ArrowRight["'][\s\S]*["']Home["'][\s\S]*["']End["']/, "editor tabs need standard arrow-key navigation");
+  for (const route of ["presence rules", "developer tools", "active tasks", "discord-logs", "conflicts", "capability packs", "vrms", "favorites"]) {
+    assert.match(renderer, new RegExp(`["']${route}["']`), `${route} is missing a sidebar destination`);
+  }
 });

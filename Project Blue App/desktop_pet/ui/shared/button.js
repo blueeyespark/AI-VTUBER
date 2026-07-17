@@ -1,4 +1,16 @@
-// Project Blue UI component placeholder for Button.
-// Runtime wiring is centralized in shell/app-shell.js and control.js during the migration.
-window.ProjectBlueUI = window.ProjectBlueUI || {};
-window.ProjectBlueUI.Button = window.ProjectBlueUI.Button || { name: 'Button' };
+(() => {
+  const ui = window.ProjectBlueUI;
+  if (!ui) return;
+  ui.register("Button", {
+    mount(target, props = {}) {
+      const button = ui.createElement("button", {
+        className: ["pb-button", props.variant || "primary", props.className || ""].filter(Boolean).join(" "),
+        text: props.label || props.text || "Button",
+        attributes: { type: props.type || "button", disabled: Boolean(props.disabled), title: props.title || null },
+        events: { click: props.onClick }
+      });
+      target.replaceChildren(button);
+      return button;
+    }
+  });
+})();

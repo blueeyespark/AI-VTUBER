@@ -18,7 +18,7 @@ function run(executable, args, options = {}) {
 
 function normalizeFile(value) {
   const file = String(value || "").replace(/\\/g, "/").replace(/^\.\//, "");
-  if (!file || file.startsWith("-") || path.isAbsolute(file) || file.split("/").includes("..") || /[\0\r\n]/.test(file)) throw new Error("Invalid repository-relative path.");
+  if (!file || file.startsWith("-") || path.isAbsolute(file) || /^[A-Za-z]:\//.test(file) || file.startsWith("//") || file.split("/").includes("..") || /[\0\r\n]/.test(file)) throw new Error("Invalid repository-relative path.");
   return file;
 }
 

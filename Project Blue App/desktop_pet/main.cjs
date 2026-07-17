@@ -1,6 +1,6 @@
 const {
   app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell,
-  Tray, Menu, nativeImage
+  Tray, Menu, nativeImage, Notification
 } = require("electron");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -44,6 +44,16 @@ const { BlueFeatureService } = require("./blue-feature-service.cjs");
 const { BlueEditorService } = require("./editor-service.cjs");
 const { BlueWorkbenchContextService } = require("./workbench-context-service.cjs");
 const { ProactiveBlueService } = require("./proactive-blue-service.cjs");
+const { WorkbenchHealthService } = require("./workbench-health-service.cjs");
+const { IdeReadinessService } = require("./ide-readiness-service.cjs");
+const { ProjectConsciousnessService } = require("./project-consciousness-service.cjs");
+const { BlueBrainService } = require("./blue-brain-service.cjs");
+const { KnowledgeGraphService } = require("./knowledge-graph-service.cjs");
+const { SemanticTimelineService } = require("./semantic-timeline-service.cjs");
+const { BackgroundAgentService } = require("./background-agent-service.cjs");
+const { BackgroundAgentSchedulerService } = require("./background-agent-scheduler-service.cjs");
+const { WorkspaceHealthScoreService } = require("./workspace-health-score-service.cjs");
+const { RuntimeProfilerService } = require("./runtime-profiler-service.cjs");
 const {
   DEFAULT_STREAMING_CONFIG,
   normalizeStreamingConfig,
@@ -62,6 +72,7 @@ const {
   obsRequest
 } = require("./streaming-core.cjs");
 const desktopVersion = require("./package.json").version;
+const { resolveProjectRoot, relativeDesktopCwd } = require("./project-paths.cjs");
 
 let petWindow;
 let controlWindow;
@@ -82,14 +93,16 @@ let petRecoveryAttempts = [];
 let controlRecoveryTimer = null;
 let controlRecoveryAttempts = [];
 const appRoot = path.resolve(__dirname, "..");
-const repoRoot = path.resolve(appRoot, "..");
+const repoRoot = resolveProjectRoot(__dirname);
+const desktopTaskCwd = relativeDesktopCwd(repoRoot, __dirname);
 const workspaceAgent = new BlueWorkspaceAgentBridge(repoRoot);
 const blueFeatureService = new BlueFeatureService();
 const editorService = new BlueEditorService(repoRoot, {
   recoveryRoot: path.join(appRoot, ".blue", "editor-recovery")
 });
 const terminalService = new BlueTerminalService(repoRoot, {
-  tasksPath: path.join(appRoot, ".blue", "tasks.json")
+  tasksPath: path.join(appRoot, ".blue", "tasks.json"),
+  defaultTaskCwd: desktopTaskCwd
 });
 const gitService = new BlueGitService(repoRoot);
 const languageService = new BlueLanguageService(repoRoot, { moduleRoot: __dirname });
@@ -100,8 +113,26 @@ const workbenchContextService = new BlueWorkbenchContextService(repoRoot, {
   stateRoot: path.join(appRoot, ".blue", "workbench-context")
 });
 const proactiveBlueService = new ProactiveBlueService(workbenchContextService);
+const workbenchHealthService = new WorkbenchHealthService(__dirname);
+const projectConsciousnessService = new ProjectConsciousnessService(repoRoot);
+const v8StateRoot = path.join(appRoot, ".blue", "v8");
+const blueBrainService = new BlueBrainService(repoRoot, { file: path.join(v8StateRoot, "brain.json") });
+const knowledgeGraphService = new KnowledgeGraphService(repoRoot, projectConsciousnessService, { file: path.join(v8StateRoot, "knowledge-graph.json") });
+const semanticTimelineService = new SemanticTimelineService(repoRoot, { file: path.join(v8StateRoot, "semantic-timeline.jsonl") });
+const backgroundAgentService = new BackgroundAgentService(repoRoot, { knowledge: knowledgeGraphService });
+const backgroundAgentSchedulerService = new BackgroundAgentSchedulerService(repoRoot, backgroundAgentService, {
+  file: path.join(v8StateRoot, "background-agent-scheduler.json"),
+  notify: summary => {
+    if (!Notification?.isSupported?.()) return false;
+    new Notification({ title: summary.title, body: summary.body, silent: false }).show();
+    return true;
+  }
+});
+const workspaceHealthScoreService = new WorkspaceHealthScoreService({ workbench: workbenchHealthService, knowledge: knowledgeGraphService, agents: backgroundAgentService, brain: blueBrainService });
+const runtimeProfilerService = new RuntimeProfilerService(repoRoot, { knowledge: knowledgeGraphService }, { file: path.join(v8StateRoot, "runtime-performance.json") });
+const ideReadinessService = new IdeReadinessService(repoRoot, { editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, extensions: extensionService, workspaceAgent, context: workbenchContextService, health: workbenchHealthService }, { desktopRoot: __dirname });
 workbenchContextService.attachServices({ editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, extensions: extensionService });
-workspaceAgent.attachServices({ editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, context: workbenchContextService, proactive: proactiveBlueService });
+workspaceAgent.attachServices({ editor: editorService, terminal: terminalService, git: gitService, language: languageService, debug: debugService, tests: testService, context: workbenchContextService, proactive: proactiveBlueService, health: workbenchHealthService, ideReadiness: ideReadinessService, projectConsciousness: projectConsciousnessService, brain: blueBrainService, knowledge: knowledgeGraphService, semanticTimeline: semanticTimelineService, backgroundAgents: backgroundAgentService, backgroundAgentScheduler: backgroundAgentSchedulerService, workspaceHealthScore: workspaceHealthScoreService, runtimeProfiler: runtimeProfilerService });
 const observeWorkbench = (type, details = {}, uiContext = null) => proactiveBlueService.observe(type, details, uiContext).catch(() => null);
 languageService.on("event", event => {
   if (controlWindow && !controlWindow.isDestroyed() && !controlWindow.webContents.isDestroyed()) controlWindow.webContents.send("blue:lsp-event", event);
@@ -5242,7 +5273,7 @@ function createApplicationMenu() {
     {
       label: "Help",
       submenu: [
-        { label: "Open Blue Folder", click: () => shell.openPath(appRoot) },
+        { label: "Open Blue Folder", click: () => shell.openPath(repoRoot) },
         { label: "Run diagnostics in Chat", click: () => {
           showControl();
           controlWindow?.webContents.executeJavaScript(
@@ -5359,7 +5390,7 @@ function showControl() {
 }
 
 function createTray() {
-  const iconPath = path.join(appRoot, "src", "project_blue", "data", "blue_avatar.png");
+  const iconPath = path.join(repoRoot, "src", "project_blue", "data", "blue_avatar.png");
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
   tray.setToolTip("Project Blue");
   const rebuild = () => tray.setContextMenu(Menu.buildFromTemplate([
@@ -6343,6 +6374,35 @@ function registerHandlers() {
   trustedHandle("blue:workbench-observe", async (_event, value) => proactiveBlueService.observe(value?.type || "workbench.event", value?.details || {}, value?.uiContext || null));
   trustedHandle("blue:workbench-suggestions", async (_event, limit) => proactiveBlueService.suggestions(limit));
   trustedHandle("blue:workbench-suggestion-dismiss", async (_event, id) => proactiveBlueService.dismiss(String(id || "")));
+  trustedHandle("blue:workbench-health", async () => workbenchHealthService.snapshot());
+  trustedHandle("blue:ide-readiness", async () => ideReadinessService.snapshot());
+  trustedHandle("blue:project-consciousness", async () => projectConsciousnessService.snapshot());
+  trustedHandle("blue:v8-brain", async () => blueBrainService.snapshot());
+  trustedHandle("blue:v8-brain-recall", async (_event, value) => blueBrainService.recall(value?.query, value || {}));
+  trustedHandle("blue:v8-brain-remember", async (_event, value) => blueBrainService.remember(value, value?.approved === true));
+  trustedHandle("blue:v8-brain-goal", async (_event, value) => blueBrainService.addGoal(value, value?.approved === true));
+  trustedHandle("blue:v8-knowledge", async (_event, rebuild) => rebuild === true ? knowledgeGraphService.rebuild() : knowledgeGraphService.graph());
+  trustedHandle("blue:v8-impact", async (_event, id) => knowledgeGraphService.impact(String(id || "")));
+  trustedHandle("blue:v8-timeline", async (_event, value) => semanticTimelineService.search(value?.query, value?.limit));
+  trustedHandle("blue:v8-timeline-record", async (_event, value) => semanticTimelineService.record(value, value?.approved === true));
+  trustedHandle("blue:v8-time-machine-plan", async (_event, query) => semanticTimelineService.reconstruct(String(query || "")));
+  trustedHandle("blue:v8-agents", async () => backgroundAgentService.catalog());
+  trustedHandle("blue:v8-agent-run", async (_event, id) => backgroundAgentSchedulerService.runNow(String(id || ""), "manual").report);
+  trustedHandle("blue:v8-agent-scheduler", async (_event, value = {}) => {
+    const action = String(value?.action || "status");
+    if (action === "status") return backgroundAgentSchedulerService.status();
+    if (action === "catalog") return backgroundAgentSchedulerService.catalog();
+    if (action === "history") return backgroundAgentSchedulerService.history({ id: value?.id, limit: value?.limit });
+    if (action === "notifications") return backgroundAgentSchedulerService.configureNotifications(value, value?.approved === true);
+    if (action === "configure") return backgroundAgentSchedulerService.configure(String(value?.id || ""), value, value?.approved === true);
+    if (action === "pause") return backgroundAgentSchedulerService.pause(String(value?.id || ""));
+    if (action === "resume") return backgroundAgentSchedulerService.resume(String(value?.id || ""), value?.approved === true);
+    if (action === "run") return backgroundAgentSchedulerService.runNow(String(value?.id || ""), "manual");
+    if (action === "runDue") return backgroundAgentSchedulerService.runDue();
+    throw new Error("Unknown background-agent scheduler action.");
+  });
+  trustedHandle("blue:v8-health", async () => workspaceHealthScoreService.snapshot());
+  trustedHandle("blue:v8-profile", async (_event, value) => value?.mode === "history" ? runtimeProfilerService.history(value?.limit) : value?.mode === "sample" ? runtimeProfilerService.sample({ label: value?.label }) : runtimeProfilerService.report({ label: value?.label }));
   trustedHandle("blue:workspace-context", async () => workspaceAgent.runSlash("/workspace"));
   trustedHandle("blue:workspace-search", async (_event, query) => workspaceAgent.runSlash(`/search ${String(query || "")}`));
   trustedHandle("blue:workspace-symbols", async (_event, query) => workspaceAgent.runSlash(`/symbols ${String(query || "")}`));
@@ -6752,6 +6812,7 @@ if (singleInstanceLock) {
 }
 
 app.whenReady().then(() => {
+  backgroundAgentSchedulerService.start();
   if (!singleInstanceLock) return;
   observeWorkbench("project.opened", { version: desktopVersion, workspace: path.basename(repoRoot) });
   appendActivity(activityLedgerPath, "system", "Blue desktop presence started", {
@@ -6831,6 +6892,7 @@ app.on("before-quit", () => {
   languageService.stopAll().catch(() => {});
   debugService.stopAll().catch(() => {});
   extensionService.stop().catch(() => {});
+  backgroundAgentSchedulerService.stop();
   if (phoneBridgeServer) phoneBridgeServer.close();
   discordAddon.disconnect();
 });

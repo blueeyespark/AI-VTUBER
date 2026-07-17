@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
-const pty = require("node-pty");
+let nativePty = null;
+try { nativePty = require("node-pty"); } catch { nativePty = null; }
 
 const MAX_TERMINALS = 12;
 const MAX_SCROLLBACK = 1024 * 1024;
@@ -18,7 +19,8 @@ function atomicJson(filePath, value) {
 
 function commandExists(command) {
   try {
-    execFileSync("where.exe", [command], { windowsHide: true, stdio: "ignore", timeout: 2500 });
+    if (process.platform === "win32") execFileSync("where.exe", [command], { windowsHide: true, stdio: "ignore", timeout: 2500 });
+    else execFileSync("sh", ["-lc", `command -v -- ${JSON.stringify(String(command))}`], { stdio: "ignore", timeout: 2500 });
     return true;
   } catch {
     return false;
@@ -46,11 +48,20 @@ class BlueTerminalService {
     this.tasksPath = options.tasksPath || path.join(this.workspaceRoot, ".blue", "tasks.json");
     this.sessions = new Map();
     this.listeners = new Set();
-    this.pty = options.pty || pty;
+    this.pty = options.pty || nativePty;
+    this.defaultTaskCwd = String(options.defaultTaskCwd || ".");
     this.tasks = this.loadTasks();
   }
 
   profiles() {
+    if (process.platform !== "win32") {
+      return [
+        { id: "powershell", label: "PowerShell", executable: "pwsh", args: ["-NoLogo"], available: commandExists("pwsh") },
+        { id: "cmd", label: "Command Prompt", executable: "cmd.exe", args: [], available: false },
+        { id: "git-bash", label: "Bash", executable: "bash", args: ["--noprofile", "--norc", "-i"], available: commandExists("bash") },
+        { id: "python", label: "Python", executable: commandExists("python3") ? "python3" : "python", args: ["-i"], available: commandExists("python3") || commandExists("python") }
+      ];
+    }
     const gitBash = [
       process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe"),
       process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Git", "bin", "bash.exe")
@@ -78,6 +89,7 @@ class BlueTerminalService {
   }
 
   create(options = {}) {
+    if (!this.pty || typeof this.pty.spawn !== "function") throw new Error("Native terminal support is unavailable. Reinstall node-pty for this operating system or use a packaged Project Blue build.");
     if (this.sessions.size >= MAX_TERMINALS) throw new Error(`Project Blue supports up to ${MAX_TERMINALS} simultaneous terminals.`);
     const profile = this.profiles().find(item => item.id === String(options.profile || "powershell"));
     if (!profile?.available) throw new Error("The selected terminal profile is not installed.");
@@ -128,8 +140,8 @@ class BlueTerminalService {
 
   loadTasks() {
     const defaults = [
-      { id: "blue-check", label: "Project Blue: Check", type: "build", command: "npm.cmd run check", profile: "powershell", cwd: "Project Blue App/desktop_pet", background: false },
-      { id: "blue-tests", label: "Project Blue: Tests", type: "test", command: "npm.cmd test", profile: "powershell", cwd: "Project Blue App/desktop_pet", background: false }
+      { id: "blue-check", label: "Project Blue: Check", type: "build", command: process.platform === "win32" ? "npm.cmd run check" : "npm run check", profile: "powershell", cwd: this.defaultTaskCwd, background: false },
+      { id: "blue-tests", label: "Project Blue: Tests", type: "test", command: process.platform === "win32" ? "npm.cmd test" : "npm test", profile: "powershell", cwd: this.defaultTaskCwd, background: false }
     ];
     try {
       const parsed = JSON.parse(fs.readFileSync(this.tasksPath, "utf8"));
